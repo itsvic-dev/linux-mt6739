@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+
+/dts-v1/;
+
+#include "mt6739.dtsi"
+
+/ {
+	model = "AGM M7";
+	compatible = "agm,m7", "mediatek,mt6739";
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	chosen {
+		bootargs = "";
+	};
+
+	/* LK looks up "/memory" by exact path and rewrites it. */
+	memory {
+		device_type = "memory";
+		reg = <0 0x40000000 0 0x20000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		/* Same layout as the stock kernel, so Android can read our logs. */
+		ramoops@44410000 {
+			compatible = "ramoops";
+			reg = <0 0x44410000 0 0xe0000>;
+			record-size = <0x1000>;
+			console-size = <0x40000>;
+			ftrace-size = <0x1000>;
+			pmsg-size = <0x10000>;
+		};
+	};
+};
