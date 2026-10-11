@@ -1185,11 +1185,15 @@ static void createWirelessDevice(void)
 	prWiphy->max_sched_scan_ie_len	= CFG_CFG80211_IE_BUF_LEN;
 
 	/* prWiphy->interface_modes	= BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_ADHOC); */
+#if CFG_ENABLE_WIFI_DIRECT
 	prWiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_ADHOC) |
 					BIT(NL80211_IFTYPE_P2P_CLIENT) | BIT(NL80211_IFTYPE_P2P_GO);
 
 	prWiphy->iface_combinations = p_mtk_sta_iface_combos;
 	prWiphy->n_iface_combinations = mtk_sta_iface_combos_num;
+#else
+	prWiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_ADHOC);
+#endif
 
 	prWiphy->bands[IEEE80211_BAND_2GHZ] = &mtk_band_2ghz;
 	/*
