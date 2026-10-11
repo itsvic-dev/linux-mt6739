@@ -27,14 +27,143 @@
 		#size-cells = <2>;
 		ranges;
 
-		/* Same layout as the stock kernel, so Android can read our logs. */
+		/* Stock kernel layout: dump zones, then the console zone. */
 		ramoops@44410000 {
 			compatible = "ramoops";
-			reg = <0 0x44410000 0 0xe0000>;
+			reg = <0 0x44410000 0 0x4f000>;
 			record-size = <0x1000>;
-			console-size = <0x40000>;
-			ftrace-size = <0x1000>;
-			pmsg-size = <0x10000>;
+		};
+
+		/* Used by earlycon=pstoreram. */
+		console-ramoops@4445f000 {
+			reg = <0 0x4445f000 0 0x40000>;
+			no-map;
+		};
+	};
+
+	/* LK asserts unless its ODM overlay applies, so give it these targets. */
+	lk-odm-overlay-sink {
+		chosen: chosen {
+		};
+
+		odm: odm {
+		};
+
+		pio: pio {
+		};
+
+		button_bl_gpio: button-bl-gpio {
+		};
+
+		i2c1: i2c1 {
+		};
+
+		mtkfb: mtkfb {
+		};
+
+		accdet: accdet {
+		};
+
+		consys: consys {
+		};
+
+		i2c2: i2c2 {
+		};
+
+		irtx_pwm: irtx-pwm {
+		};
+
+		apuart0: apuart0 {
+		};
+
+		i2c3: i2c3 {
+		};
+
+		wusb3801x: wusb3801x {
+		};
+
+		irq_wusb3801x: irq-wusb3801x {
+		};
+
+		touch: touch {
+		};
+
+		kd_camera_hw1: kd-camera-hw1 {
+		};
+
+		flashlights_gpio_dev: flashlights-gpio-dev {
+		};
+
+		audgpio: audgpio {
+		};
+
+		speaker: speaker {
+		};
+
+		tyd_mic_gpio: tyd-mic-gpio {
+		};
+
+		msdc1: msdc1 {
+		};
+
+		nfc: nfc {
+		};
+
+		led_gpio: led-gpio {
+		};
+
+		charger: charger {
+		};
+
+		auxadc: auxadc {
+		};
+
+		pmic_clock_buffer_ctrl: pmic-clock-buffer-ctrl {
+		};
+
+		i2c0: i2c0 {
+		};
+
+		i2c4: i2c4 {
+		};
+
+		i2c5: i2c5 {
+		};
+
+		gpio_usage_mapping: gpio-usage-mapping {
+		};
+
+		chr_stat: chr-stat {
+		};
+
+		irq_nfc: irq-nfc {
+		};
+
+		otg_iddig: otg-iddig {
+		};
+
+		main_pmic: main-pmic {
+		};
+
+		mt_pmic_vcama_ldo_reg: mt-pmic-vcama-ldo-reg {
+		};
+
+		mt_pmic_vsim1_ldo_reg: mt-pmic-vsim1-ldo-reg {
+		};
+
+		mt_pmic_vsim2_ldo_reg: mt-pmic-vsim2-ldo-reg {
+		};
+
+		mt_pmic_vcamd_ldo_reg: mt-pmic-vcamd-ldo-reg {
+		};
+
+		mt_pmic_vcamio_ldo_reg: mt-pmic-vcamio-ldo-reg {
+		};
+
+		mt_pmic_vldo28_ldo_reg: mt-pmic-vldo28-ldo-reg {
+		};
+
+		keypad: keypad {
 		};
 	};
 };
