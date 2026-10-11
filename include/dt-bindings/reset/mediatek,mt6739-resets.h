@@ -1,0 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only OR MIT */
+
+#ifndef _DT_BINDINGS_RESET_MEDIATEK_MT6739_H
+#define _DT_BINDINGS_RESET_MEDIATEK_MT6739_H
+
+#define MT6739_INFRACFG_AO_PMIC_WRAP_SW_RST	0
+
+#endif
