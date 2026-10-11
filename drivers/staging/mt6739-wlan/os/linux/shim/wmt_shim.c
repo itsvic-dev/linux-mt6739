@@ -4,6 +4,7 @@
 
 #include <linux/moduleparam.h>
 #include <linux/mutex.h>
+#include <linux/sched/debug.h>
 #include "wmt_shim.h"
 #include "precomp.h"
 
@@ -176,4 +177,15 @@ int wifi_reset_start(void)
 int wifi_reset_end(ENUM_RESET_STATUS_T status)
 {
 	return 0;
+}
+
+void connectivity_export_show_stack(struct task_struct *tsk, unsigned long *sp)
+{
+	if (tsk)
+		sched_show_task(tsk);
+}
+
+/* MediaTek printk rate limiting; mainline printk has no such switch. */
+void set_logtoomuch_enable(int value)
+{
 }
