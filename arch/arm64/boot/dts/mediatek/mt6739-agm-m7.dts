@@ -253,6 +253,10 @@
 
 		/delete-node/ key-home;
 	};
+
+	power-controller {
+		compatible = "mediatek,mt6357-pwrc";
+	};
 };
 
 &mt6357_vdram_reg {
