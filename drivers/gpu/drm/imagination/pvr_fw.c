@@ -2,6 +2,7 @@
 /* Copyright (c) 2023 Imagination Technologies Ltd. */
 
 #include "pvr_ccb.h"
+#include "pvr_ddk19.h"
 #include "pvr_device.h"
 #include "pvr_device_info.h"
 #include "pvr_fw.h"
@@ -949,6 +950,9 @@ pvr_fw_init(struct pvr_device *pvr_dev)
 	u32 kccb_rtn_size = (1 << kccb_size_log2) * sizeof(*pvr_dev->kccb.rtn);
 	struct pvr_fw_device *fw_dev = &pvr_dev->fw_dev;
 	int err;
+
+	if (pvr_dev->device_data->ddk19)
+		return pvr_ddk19_fw_init(pvr_dev);
 
 	if (fw_dev->processor_type >= PVR_FW_PROCESSOR_TYPE_COUNT)
 		return -EINVAL;

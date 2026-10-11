@@ -62,12 +62,15 @@ struct pvr_fw_version {
 	u16 major, minor;
 };
 
+struct pvr_ddk19;
+
 /**
  * struct pvr_device_data - Platform specific data associated with a compatible string.
  * @pwr_ops: Pointer to a structure with platform-specific power functions.
  */
 struct pvr_device_data {
 	const struct pvr_power_sequence_ops *pwr_ops;
+	bool ddk19;
 };
 
 /**
@@ -191,6 +194,9 @@ struct pvr_device {
 
 	/** @fw_dev: Firmware related data. */
 	struct pvr_fw_device fw_dev;
+
+	/** @ddk19: State of the DDK 1.9 firmware interface, if the device uses it. */
+	struct pvr_ddk19 *ddk19;
 
 	/** @stream_musthave_quirks: Bit array of "must-have" quirks for stream commands. */
 	u32 stream_musthave_quirks[PVR_STREAM_TYPE_MAX][PVR_STREAM_EXTHDR_TYPE_MAX];

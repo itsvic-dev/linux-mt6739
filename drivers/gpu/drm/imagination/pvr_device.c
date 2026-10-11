@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /* Copyright (c) 2023 Imagination Technologies Ltd. */
 
+#include "pvr_ddk19.h"
 #include "pvr_device.h"
 #include "pvr_device_info.h"
 
@@ -376,8 +377,11 @@ pvr_request_firmware(struct pvr_device *pvr_dev)
 	const struct firmware *fw;
 	int err;
 
-	filename = pvr_build_firmware_filename(pvr_dev, "powervr/rogue",
-					       PVR_FW_VERSION_MAJOR);
+	if (pvr_dev->device_data->ddk19)
+		filename = pvr_ddk19_firmware_filename(pvr_dev);
+	else
+		filename = pvr_build_firmware_filename(pvr_dev, "powervr/rogue",
+						       PVR_FW_VERSION_MAJOR);
 	if (!filename)
 		return -ENOMEM;
 
@@ -548,6 +552,9 @@ pvr_check_gpu_supported(struct pvr_device *pvr_dev,
 {
 	struct drm_device *drm_dev = from_pvr_device(pvr_dev);
 
+	if (pvr_dev->device_data->ddk19)
+		return 0;
+
 	switch (pvr_gpu_support_level(gpu_id)) {
 	case PVR_GPU_SUPPORTED:
 		if (pvr_exp_hw_support)
@@ -680,7 +687,10 @@ pvr_device_gpu_init(struct pvr_device *pvr_dev)
 	if (err)
 		return err;
 
-	err = pvr_fw_validate_init_device_info(pvr_dev);
+	if (pvr_dev->device_data->ddk19)
+		pvr_ddk19_init_device_info(pvr_dev);
+	else
+		err = pvr_fw_validate_init_device_info(pvr_dev);
 	if (err)
 		return err;
 

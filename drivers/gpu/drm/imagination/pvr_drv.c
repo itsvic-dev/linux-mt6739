@@ -2,6 +2,7 @@
 /* Copyright (c) 2023 Imagination Technologies Ltd. */
 
 #include "pvr_context.h"
+#include "pvr_ddk19.h"
 #include "pvr_debugfs.h"
 #include "pvr_device.h"
 #include "pvr_drv.h"
@@ -1487,11 +1488,20 @@ static const struct pvr_device_data pvr_device_data_manual = {
 	.pwr_ops = &pvr_power_sequence_ops_manual,
 };
 
+static const struct pvr_device_data pvr_device_data_ddk19 = {
+	.pwr_ops = &pvr_power_sequence_ops_ddk19,
+	.ddk19 = true,
+};
+
 static const struct pvr_device_data pvr_device_data_pwrseq = {
 	.pwr_ops = &pvr_power_sequence_ops_pwrseq,
 };
 
 static const struct of_device_id dt_match[] = {
+	{
+		.compatible = "mediatek,mt6739-gpu",
+		.data = &pvr_device_data_ddk19,
+	},
 	{
 		.compatible = "thead,th1520-gpu",
 		.data = &pvr_device_data_pwrseq,

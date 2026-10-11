@@ -5,6 +5,7 @@ powervr-y := \
 	pvr_ccb.o \
 	pvr_cccb.o \
 	pvr_context.o \
+	pvr_ddk19.o \
 	pvr_device.o \
 	pvr_device_info.o \
 	pvr_drv.o \
