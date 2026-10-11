@@ -5,6 +5,8 @@
 #include "mt6739.dtsi"
 #include "mt6357.dtsi"
 
+#include <dt-bindings/iio/adc/mediatek,mt6357-auxadc.h>
+
 / {
 	model = "AGM M7";
 	compatible = "agm,m7", "mediatek,mt6739";
@@ -21,6 +23,20 @@
 	memory {
 		device_type = "memory";
 		reg = <0 0x40000000 0 0x20000000>;
+	};
+
+	battery: battery {
+		compatible = "simple-battery";
+		device-chemistry = "lithium-ion";
+		voltage-min-design-microvolt = <3400000>;
+		voltage-max-design-microvolt = <4350000>;
+	};
+
+	fuel-gauge {
+		compatible = "adc-battery";
+		io-channels = <&pmic_adc MT6357_AUXADC_BATADC>;
+		io-channel-names = "voltage";
+		monitored-battery = <&battery>;
 	};
 
 	reserved-memory {
