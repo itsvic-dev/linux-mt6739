@@ -200,6 +200,40 @@ static const u16 mt_i2c_regs_v1[] = {
 	[OFFSET_SDA_TIMING] = 0x88,
 };
 
+static const u16 mt_i2c_regs_mt6739[] = {
+	[OFFSET_DATA_PORT] = 0x0,
+	[OFFSET_SLAVE_ADDR] = 0x4,
+	[OFFSET_INTR_MASK] = 0x8,
+	[OFFSET_INTR_STAT] = 0xc,
+	[OFFSET_CONTROL] = 0x10,
+	[OFFSET_TRANSFER_LEN] = 0x14,
+	[OFFSET_TRANSAC_LEN] = 0x18,
+	[OFFSET_DELAY_LEN] = 0x1c,
+	[OFFSET_TIMING] = 0x20,
+	[OFFSET_LTIMING] = 0x2c,
+	[OFFSET_START] = 0x24,
+	[OFFSET_EXT_CONF] = 0x28,
+	[OFFSET_FIFO_STAT] = 0x30,
+	[OFFSET_FIFO_THRESH] = 0x34,
+	[OFFSET_FIFO_ADDR_CLR] = 0x38,
+	[OFFSET_IO_CONFIG] = 0x40,
+	[OFFSET_RSV_DEBUG] = 0x44,
+	[OFFSET_HS] = 0x48,
+	[OFFSET_SOFTRESET] = 0x50,
+	[OFFSET_DCM_EN] = 0x54,
+	[OFFSET_PATH_DIR] = 0x60,
+	[OFFSET_DEBUGSTAT] = 0x64,
+	[OFFSET_DEBUGCTRL] = 0x68,
+	[OFFSET_TRANSFER_LEN_AUX] = 0x6c,
+	[OFFSET_CLOCK_DIV] = 0x70,
+	[OFFSET_SCL_HIGH_LOW_RATIO] = 0x74,
+	[OFFSET_HS_SCL_HIGH_LOW_RATIO] = 0x78,
+	[OFFSET_SCL_MIS_COMP_POINT] = 0x7C,
+	[OFFSET_STA_STO_AC_TIMING] = 0x80,
+	[OFFSET_HS_STA_STO_AC_TIMING] = 0x84,
+	[OFFSET_SDA_TIMING] = 0x88,
+};
+
 static const u16 mt_i2c_regs_v2[] = {
 	[OFFSET_DATA_PORT] = 0x0,
 	[OFFSET_SLAVE_ADDR] = 0x4,
@@ -269,6 +303,7 @@ struct mtk_i2c_compatible {
 	unsigned char dma_sync: 1;
 	unsigned char ltiming_adjust: 1;
 	unsigned char apdma_sync: 1;
+	unsigned char clk_div_reg: 1;
 	unsigned char max_dma_support;
 };
 
@@ -431,6 +466,20 @@ static const struct mtk_i2c_compatible mt8168_compat = {
 	.max_dma_support = 33,
 };
 
+static const struct mtk_i2c_compatible mt6739_compat = {
+	.regs = mt_i2c_regs_mt6739,
+	.pmic_i2c = 0,
+	.dcm = 0,
+	.auto_restart = 1,
+	.aux_len_reg = 1,
+	.timing_adjust = 0,
+	.dma_sync = 1,
+	.ltiming_adjust = 1,
+	.apdma_sync = 0,
+	.clk_div_reg = 1,
+	.max_dma_support = 33,
+};
+
 static const struct mtk_i2c_compatible mt7981_compat = {
 	.regs = mt_i2c_regs_v3,
 	.pmic_i2c = 0,
@@ -527,6 +576,7 @@ static const struct of_device_id mtk_i2c_of_match[] = {
 	{ .compatible = "mediatek,mt2712-i2c", .data = &mt2712_compat },
 	{ .compatible = "mediatek,mt6577-i2c", .data = &mt6577_compat },
 	{ .compatible = "mediatek,mt6589-i2c", .data = &mt6589_compat },
+	{ .compatible = "mediatek,mt6739-i2c", .data = &mt6739_compat },
 	{ .compatible = "mediatek,mt7622-i2c", .data = &mt7622_compat },
 	{ .compatible = "mediatek,mt7981-i2c", .data = &mt7981_compat },
 	{ .compatible = "mediatek,mt7986-i2c", .data = &mt7986_compat },
@@ -598,6 +648,12 @@ static void mtk_i2c_init_hw(struct mtk_i2c *i2c)
 		ext_conf_val = I2C_ST_START_CON;
 	else
 		ext_conf_val = I2C_FS_START_CON;
+
+	if (i2c->dev_comp->clk_div_reg)
+		mtk_i2c_writew(i2c, (i2c->clk_src_div - 1) << 8 | (i2c->clk_src_div - 1),
+			       OFFSET_CLOCK_DIV);
+	if (i2c->dev_comp->clk_div_reg && !i2c->use_push_pull)
+		mtk_i2c_writew(i2c, I2C_IO_CONFIG_OPEN_DRAIN | 0x1f0, OFFSET_IO_CONFIG);
 
 	if (i2c->dev_comp->timing_adjust) {
 		ext_conf_val = i2c->ac_timing.ext;
