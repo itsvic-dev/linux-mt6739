@@ -7,6 +7,8 @@
 #include <dt-bindings/power/mediatek,mt6739-power-controller.h>
 
 #define MT6739_SPM_CONN_PWR_CON		0x032c
+#define MT6739_SPM_MFG_PWR_CON		0x0338
+#define MT6739_SPM_MFG_CORE0_PWR_CON	0x033c
 #define MT6739_SPM_PWR_STATUS		0x0180
 #define MT6739_SPM_PWR_STATUS_2ND	0x0184
 
@@ -14,6 +16,7 @@
 #define MT6739_INFRA_TOPAXI_PROTECTEN_CLR	0x02a4
 #define MT6739_INFRA_TOPAXI_PROTECTEN_STA1	0x0228
 #define MT6739_TOP_AXI_PROT_EN_CONN		(BIT(13) | BIT(14))
+#define MT6739_TOP_AXI_PROT_EN_MFG		(BIT(21) | BIT(22))
 
 static const struct scpsys_domain_data scpsys_domain_data_mt6739[] = {
 	[MT6739_POWER_DOMAIN_CONN] = {
@@ -29,6 +32,30 @@ static const struct scpsys_domain_data scpsys_domain_data_mt6739[] = {
 				    MT6739_INFRA_TOPAXI_PROTECTEN_CLR,
 				    MT6739_INFRA_TOPAXI_PROTECTEN_STA1),
 		},
+	},
+	[MT6739_POWER_DOMAIN_MFG0] = {
+		.name = "mfg0",
+		.sta_mask = BIT(4),
+		.ctl_offs = MT6739_SPM_MFG_PWR_CON,
+		.pwr_sta_offs = MT6739_SPM_PWR_STATUS,
+		.pwr_sta2nd_offs = MT6739_SPM_PWR_STATUS_2ND,
+		.sram_pdn_bits = BIT(5),
+		.sram_pdn_ack_bits = BIT(6),
+		.bp_cfg = {
+			BUS_PROT_WR(INFRA, MT6739_TOP_AXI_PROT_EN_MFG,
+				    MT6739_INFRA_TOPAXI_PROTECTEN_SET,
+				    MT6739_INFRA_TOPAXI_PROTECTEN_CLR,
+				    MT6739_INFRA_TOPAXI_PROTECTEN_STA1),
+		},
+	},
+	[MT6739_POWER_DOMAIN_MFG1] = {
+		.name = "mfg1",
+		.sta_mask = BIT(31),
+		.ctl_offs = MT6739_SPM_MFG_CORE0_PWR_CON,
+		.pwr_sta_offs = MT6739_SPM_PWR_STATUS,
+		.pwr_sta2nd_offs = MT6739_SPM_PWR_STATUS_2ND,
+		.sram_pdn_bits = BIT(5),
+		.sram_pdn_ack_bits = BIT(6),
 	},
 };
 
