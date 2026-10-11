@@ -44,21 +44,47 @@
 
 #define DDK19_GPU_UTIL_STATE_IDLE 1
 
+#define DDK19_CTX_STATE_SIZE 8
+#define DDK19_RF_CMD_SIZE 16
 #define DDK19_HWPERF_CTL_SIZE 4608
 #define DDK19_HWRINFOBUF_SIZE 1688
+#define DDK19_HWRINFO_SIZE 104
+#define DDK19_HWRINFO_COUNT 16
 #define DDK19_GPU_UTIL_FWCB_SIZE 10288
 #define DDK19_GPU_UTIL_FWCB_LAST_WORD 10248
 
 #define DDK19_DM_GP 0
+#define DDK19_DM_3D 3
+#define DDK19_DM_CDM 4
 
+#define DDK19_KCCB_CMD_KICK 101
 #define DDK19_KCCB_CMD_MMUCACHE 102
 #define DDK19_KCCB_CMD_SYNC 107
+#define DDK19_KCCB_CMD_CLEANUP 109
 #define DDK19_KCCB_CMD_POW 110
 #define DDK19_KCCB_CMD_HEALTH_CHECK 120
 
 #define DDK19_POW_OFF_REQ 1
 #define DDK19_POW_FORCED_IDLE_REQ 2
 #define DDK19_POWER_FORCE_IDLE 1
+
+#define DDK19_CLEANUP_RUN BIT(0)
+#define DDK19_CLEANUP_BUSY BIT(1)
+
+#define DDK19_CCB_TYPE_TASK BIT(31)
+#define DDK19_CCB_CMD_TYPE_TA (201 | DDK19_CCB_TYPE_TASK)
+#define DDK19_CCB_CMD_TYPE_3D (202 | DDK19_CCB_TYPE_TASK)
+#define DDK19_CCB_CMD_TYPE_CDM (203 | DDK19_CCB_TYPE_TASK)
+#define DDK19_CCB_CMD_TYPE_TQ_3D (204 | DDK19_CCB_TYPE_TASK)
+#define DDK19_CCB_CMD_TYPE_3D_PR (206 | DDK19_CCB_TYPE_TASK)
+#define DDK19_CCB_CMD_TYPE_NULL (207 | DDK19_CCB_TYPE_TASK)
+#define DDK19_CCB_CMD_TYPE_TQ_TDM (212 | DDK19_CCB_TYPE_TASK)
+#define DDK19_CCB_CMD_TYPE_FENCE 213
+#define DDK19_CCB_CMD_TYPE_UPDATE 214
+#define DDK19_CCB_CMD_TYPE_RMW_UPDATE 215
+#define DDK19_CCB_CMD_TYPE_FENCE_PR 216
+#define DDK19_CCB_CMD_TYPE_PRIORITY 217
+#define DDK19_CCB_CMD_TYPE_PADDING 221
 
 #define DDK19_POW_STATE_OFF 0
 #define DDK19_POW_STATE_ON 1
@@ -71,6 +97,9 @@
 #define DDK19_DOPPLER_OVERFLOW_HEAP_BASE 0xE900000000ull
 #define DDK19_TDM_TPU_YUV_COEFFS_HEAP_BASE 0xEA00080000ull
 #define DDK19_BIF_TILING_HEAP_BASE 0xD000000000ull
+#define DDK19_MMU_INIA_BRN_65273_BASE 0xF800000000ull
+#define DDK19_MMU_INIB_BRN_65273_BASE 0xF900000000ull
+#define DDK19_BRN_65273_RGN_HDR_SIZE SZ_64K
 #define DDK19_BIF_TILING_HEAP_SIZE 0x0200000000ull
 
 struct ddk19_fwif_ccb_ctl {
@@ -245,8 +274,87 @@ struct ddk19_fwif_kccb_cmd {
 			u32 sync_fw_addr;
 			u16 sync_update_val;
 		} mmu_cache;
+		struct {
+			u32 context_fw_addr;
+			u32 client_woff_update;
+			u32 num_cleanup_ctl;
+			u32 cleanup_ctl_fw_addr[4];
+			u32 workload_data_fw_addr;
+			u32 work_est_cmd_header_offset;
+		} kick;
+		struct {
+			u32 cleanup_type;
+			u32 fw_addr;
+			u32 sync_fw_addr;
+		} cleanup;
 		u8 raw[136];
 	} data;
+};
+
+struct ddk19_fwif_ccb_cmd_header {
+	u32 cmd_type;
+	u32 cmd_size;
+	u32 ext_job_ref;
+	u32 int_job_ref;
+	u32 workload_data_fw_addr;
+	u32 padding;
+	u64 work_est_return_data_index;
+	u64 work_est_deadline_us;
+	u64 work_est_cycles_prediction;
+	u64 robustness_reset_reason;
+};
+
+struct ddk19_fwif_fwcommoncontext {
+	u32 ccbctl_fw_addr;
+	u32 ccb_fw_addr;
+	u64 ccb_meta_dma_dev_vaddr;
+	u32 ccb_meta_dma_fw_addr;
+	u32 padding0;
+	u32 waiting_node[2];
+	u32 run_node[2];
+	u32 fw_mem_context_fw_addr;
+	u32 padding1;
+	u32 context_state_fw_addr;
+	u32 padding2;
+	u32 rf_cmd_fw_addr;
+	u32 flags;
+	u32 priority;
+	u32 priority_seq_num;
+	u64 mcu_fence_addr;
+	u32 server_common_context_id;
+	u32 pid;
+	u32 stats_pending;
+	s32 stats_num_stores;
+	s32 stats_num_out_of_memory;
+	s32 stats_num_partial_renders;
+	u32 dm;
+	u32 padding3;
+	u64 wait_signal_address;
+	u32 wait_signal_node[2];
+	u32 buf_stalled_node[2];
+	u64 cbuf_queue_ctrl_addr;
+	u64 resume_signal_addr;
+	u32 read_offset_needs_reset;
+	u32 padding4;
+};
+
+struct ddk19_fwif_cmd_compute {
+	u64 cdm_ctrl_stream_base;
+	u64 tpu_border_colour_table;
+	u64 compute_thread_barrier;
+	u64 pds_ctrl;
+	u64 tpu_yuv_csc_coefficients;
+	u64 tpu;
+	u64 tpu_arrays_cdm;
+	u64 cdm_context_state_base_addr;
+	u64 cdm_context_pds0;
+	u64 cdm_context_pds1;
+	u64 cdm_terminate_pds;
+	u64 cdm_terminate_pds1;
+	u64 cdm_resume_pds0;
+	u64 cdm_resume_pds1;
+	u32 flags;
+	u32 max_deadline_ms;
 };
 
 struct ddk19_fwif_fwccb_cmd {
@@ -261,6 +369,30 @@ static_assert(sizeof(struct ddk19_fwif_kccb_cmd) == DDK19_KCCB_CMD_SIZE);
 DDK19_CHECK(struct ddk19_fwif_kccb_cmd, data, 8);
 DDK19_CHECK(struct ddk19_fwif_kccb_cmd, data.mmu_cache.sync_update_val, 20);
 static_assert(sizeof(struct ddk19_fwif_fwccb_cmd) == DDK19_FWCCB_CMD_SIZE);
+DDK19_CHECK(struct ddk19_fwif_kccb_cmd, data.kick.work_est_cmd_header_offset, 40);
+DDK19_CHECK(struct ddk19_fwif_kccb_cmd, data.cleanup.sync_fw_addr, 16);
+
+static_assert(sizeof(struct ddk19_fwif_ccb_cmd_header) == 56);
+DDK19_CHECK(struct ddk19_fwif_ccb_cmd_header, work_est_return_data_index, 24);
+DDK19_CHECK(struct ddk19_fwif_ccb_cmd_header, robustness_reset_reason, 48);
+
+static_assert(sizeof(struct ddk19_fwif_fwcommoncontext) == 160);
+DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, ccb_meta_dma_dev_vaddr, 8);
+DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, waiting_node, 24);
+DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, fw_mem_context_fw_addr, 40);
+DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, context_state_fw_addr, 48);
+DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, rf_cmd_fw_addr, 56);
+DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, priority, 64);
+DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, mcu_fence_addr, 72);
+DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, server_common_context_id, 80);
+DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, dm, 104);
+DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, wait_signal_address, 112);
+DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, cbuf_queue_ctrl_addr, 136);
+DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, read_offset_needs_reset, 152);
+
+static_assert(sizeof(struct ddk19_fwif_cmd_compute) == 120);
+DDK19_CHECK(struct ddk19_fwif_cmd_compute, cdm_context_state_base_addr, 56);
+DDK19_CHECK(struct ddk19_fwif_cmd_compute, flags, 112);
 
 static_assert(sizeof(struct ddk19_fwif_ccb_ctl) == 16);
 static_assert(sizeof(struct ddk19_fwif_os_config) == 12);

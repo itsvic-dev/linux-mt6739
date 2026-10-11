@@ -3,6 +3,7 @@
 
 #include "pvr_vm.h"
 
+#include "pvr_ddk19.h"
 #include "pvr_device.h"
 #include "pvr_drv.h"
 #include "pvr_gem.h"
@@ -244,7 +245,8 @@ pvr_vm_bind_op_map_init(struct pvr_vm_bind_op *bind_op,
 		return -EINVAL;
 
 	if (is_user &&
-	    !pvr_find_heap_containing(vm_ctx->pvr_dev, device_addr, size)) {
+	    !pvr_find_heap_containing(vm_ctx->pvr_dev, device_addr, size) &&
+	    !pvr_ddk19_va_reserved(vm_ctx->pvr_dev, device_addr, size)) {
 		return -EINVAL;
 	}
 
@@ -593,6 +595,14 @@ pvr_vm_create_context(struct pvr_device *pvr_dev, bool is_userspace_context)
 
 	mutex_init(&vm_ctx->lock);
 	kref_init(&vm_ctx->ref_count);
+
+	if (is_userspace_context && pvr_dev->device_data->ddk19) {
+		err = pvr_ddk19_vm_context_init(pvr_dev, vm_ctx);
+		if (err) {
+			pvr_vm_context_put(vm_ctx);
+			return ERR_PTR(err);
+		}
+	}
 
 	return vm_ctx;
 

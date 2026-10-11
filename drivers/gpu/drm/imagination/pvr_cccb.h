@@ -4,13 +4,17 @@
 #ifndef PVR_CCCB_H
 #define PVR_CCCB_H
 
+#include "pvr_ddk19.h"
 #include "pvr_rogue_fwif.h"
 #include "pvr_rogue_fwif_shared.h"
 
 #include <linux/mutex.h>
 #include <linux/types.h>
 
-#define PADDING_COMMAND_SIZE sizeof(struct rogue_fwif_ccb_cmd_header)
+#define PVR_CCB_CMD_HEADER_MAX_SIZE \
+	max_t(u32, sizeof(struct rogue_fwif_ccb_cmd_header), PVR_DDK19_CCB_CMD_HEADER_SIZE)
+
+#define PADDING_COMMAND_SIZE PVR_CCB_CMD_HEADER_MAX_SIZE
 
 /* Forward declaration from pvr_device.h. */
 struct pvr_device;
@@ -50,6 +54,12 @@ struct pvr_cccb {
 
 	/** @wrap_mask: CCCB wrap mask. */
 	u32 wrap_mask;
+
+	/** @ddk19: Whether this CCCB uses the DDK 1.9 command layout. */
+	bool ddk19;
+
+	/** @dm: Data master of the context that owns this CCCB. */
+	u32 dm;
 };
 
 int pvr_cccb_init(struct pvr_device *pvr_dev, struct pvr_cccb *cccb,
@@ -81,7 +91,7 @@ static __always_inline u32
 pvr_cccb_get_size_of_cmd_with_hdr(u32 cmd_size)
 {
 	WARN_ON(!IS_ALIGNED(cmd_size, 8));
-	return sizeof(struct rogue_fwif_ccb_cmd_header) + ALIGN(cmd_size, 8);
+	return PVR_CCB_CMD_HEADER_MAX_SIZE + ALIGN(cmd_size, 8);
 }
 
 /**

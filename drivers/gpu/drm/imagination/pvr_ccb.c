@@ -613,6 +613,11 @@ pvr_kccb_reserve_slot(struct pvr_device *pvr_dev, struct dma_fence *f)
 	struct dma_fence *out_fence = NULL;
 	u32 used_count;
 
+	if (pvr_dev->device_data->ddk19) {
+		pvr_kccb_fence_put(f);
+		return NULL;
+	}
+
 	mutex_lock(&pvr_dev->kccb.ccb.lock);
 
 	used_count = pvr_kccb_used_slot_count_locked(pvr_dev);
@@ -644,6 +649,9 @@ pvr_kccb_reserve_slot(struct pvr_device *pvr_dev, struct dma_fence *f)
  */
 void pvr_kccb_release_slot(struct pvr_device *pvr_dev)
 {
+	if (pvr_dev->device_data->ddk19)
+		return;
+
 	mutex_lock(&pvr_dev->kccb.ccb.lock);
 	if (!WARN_ON(!pvr_dev->kccb.reserved_count))
 		pvr_dev->kccb.reserved_count--;

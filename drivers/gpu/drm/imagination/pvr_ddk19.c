@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 
+#include "pvr_cccb.h"
+#include "pvr_context.h"
 #include "pvr_ddk19.h"
 #include "pvr_ddk19_fwif.h"
 #include "pvr_device.h"
@@ -8,10 +10,14 @@
 #include "pvr_fw_mips.h"
 #include "pvr_fw_startstop.h"
 #include "pvr_gem.h"
+#include "pvr_job.h"
 #include "pvr_power.h"
 #include "pvr_rogue_cr_defs.h"
+#include "pvr_rogue_fwif.h"
+#include "pvr_rogue_fwif_client.h"
 #include "pvr_rogue_heap_config.h"
 #include "pvr_rogue_mips.h"
+#include "pvr_vm.h"
 #include "pvr_vm_mips.h"
 
 #include <drm/drm_managed.h>
@@ -26,12 +32,20 @@
 #include <linux/moduleparam.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
+#include <linux/sched.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 
 #define DDK19_CORE_CLOCK_SPEED 570000000
 #define DDK19_ACTIVE_PM_LATENCY_MS 50
 #define DDK19_BOOT_TIMEOUT_US 1000000
+
+enum {
+	DDK19_SYNC_KCCB,
+	DDK19_SYNC_MMU,
+	DDK19_SYNC_CLEANUP,
+	DDK19_SYNC_COUNT,
+};
 
 struct pvr_ddk19 {
 	void __iomem *mfg;
@@ -42,6 +56,7 @@ struct pvr_ddk19 {
 	struct ddk19_fwif_ccb_ctl *fwccb_ctl;
 	u8 *fwccb;
 	u32 *power_sync;
+	struct mutex sync_lock;
 	u32 *sync;
 	u32 sync_fw_addr;
 	u16 mmu_sync_val;
@@ -111,6 +126,8 @@ static int pvr_ddk19_power_init(struct pvr_device *pvr_dev)
 		return PTR_ERR(ddk19->mfg);
 
 	err = drmm_mutex_init(drm_dev, &ddk19->kccb_lock);
+	if (!err)
+		err = drmm_mutex_init(drm_dev, &ddk19->sync_lock);
 	if (err)
 		return err;
 
@@ -457,7 +474,7 @@ static int pvr_ddk19_create_structures(struct pvr_device *pvr_dev)
 		goto err_alloc;
 	}
 
-	ddk19->sync = pvr_ddk19_alloc(pvr_dev, sizeof(u32), &ddk19->sync_obj,
+	ddk19->sync = pvr_ddk19_alloc(pvr_dev, DDK19_SYNC_COUNT * sizeof(u32), &ddk19->sync_obj,
 				      &ddk19->sync_fw_addr);
 	if (IS_ERR(ddk19->sync)) {
 		ptr = ddk19->sync;
@@ -634,8 +651,6 @@ static int pvr_ddk19_kccb_send(struct pvr_device *pvr_dev, struct ddk19_fwif_kcc
 	u32 write_offset, next, read_offset;
 	int err;
 
-	cmd->dm = DDK19_DM_GP;
-
 	guard(mutex)(&ddk19->kccb_lock);
 
 	write_offset = READ_ONCE(ctl->write_offset);
@@ -667,17 +682,22 @@ int pvr_ddk19_sync(struct pvr_device *pvr_dev)
 	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
 	struct ddk19_fwif_kccb_cmd cmd = {
 		.cmd_type = DDK19_KCCB_CMD_SYNC,
-		.data.sync = { .sync_fw_addr = ddk19->sync_fw_addr, .update_val = 1 },
+		.data.sync = {
+			.sync_fw_addr = ddk19->sync_fw_addr + DDK19_SYNC_KCCB * sizeof(u32),
+			.update_val = 1,
+		},
 	};
 	int err;
 
-	WRITE_ONCE(*ddk19->sync, 0);
+	guard(mutex)(&ddk19->sync_lock);
+
+	WRITE_ONCE(ddk19->sync[DDK19_SYNC_KCCB], 0);
 
 	err = pvr_ddk19_kccb_send(pvr_dev, &cmd);
 	if (err)
 		return err;
 
-	return pvr_ddk19_poll(ddk19->sync, 1, 1000000);
+	return pvr_ddk19_poll(&ddk19->sync[DDK19_SYNC_KCCB], 1, 1000000);
 }
 
 int pvr_ddk19_mmu_flush(struct pvr_device *pvr_dev, u32 flags)
@@ -687,18 +707,234 @@ int pvr_ddk19_mmu_flush(struct pvr_device *pvr_dev, u32 flags)
 		.cmd_type = DDK19_KCCB_CMD_MMUCACHE,
 		.data.mmu_cache = {
 			.flags = flags,
-			.sync_fw_addr = ddk19->sync_fw_addr,
-			.sync_update_val = ++ddk19->mmu_sync_val,
+			.sync_fw_addr = ddk19->sync_fw_addr + DDK19_SYNC_MMU * sizeof(u32),
 		},
 	};
 	int err;
+
+	guard(mutex)(&ddk19->sync_lock);
+
+	cmd.data.mmu_cache.sync_update_val = ++ddk19->mmu_sync_val;
 
 	err = pvr_ddk19_kccb_send(pvr_dev, &cmd);
 	if (err)
 		return err;
 
-	return pvr_ddk19_poll(ddk19->sync, cmd.data.mmu_cache.sync_update_val, 1000000);
+	return pvr_ddk19_poll(&ddk19->sync[DDK19_SYNC_MMU], cmd.data.mmu_cache.sync_update_val,
+			      1000000);
 }
+
+int pvr_ddk19_cleanup(struct pvr_device *pvr_dev, u32 type, struct pvr_fw_object *fw_obj,
+		      u32 offset)
+{
+	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
+	struct ddk19_fwif_kccb_cmd cmd = {
+		.cmd_type = DDK19_KCCB_CMD_CLEANUP,
+		.dm = DDK19_DM_GP,
+		.data.cleanup = {
+			.cleanup_type = type,
+			.sync_fw_addr = ddk19->sync_fw_addr + DDK19_SYNC_CLEANUP * sizeof(u32),
+		},
+	};
+	u32 *sync = &ddk19->sync[DDK19_SYNC_CLEANUP];
+	u32 v;
+	int err;
+
+	pvr_fw_object_get_fw_addr_offset(fw_obj, offset, &cmd.data.cleanup.fw_addr);
+
+	if (type == ROGUE_FWIF_CLEANUP_FWCOMMONCONTEXT) {
+		u8 *map = pvr_fw_object_vmap(fw_obj);
+
+		if (IS_ERR(map))
+			return PTR_ERR(map);
+		cmd.dm = ((struct ddk19_fwif_fwcommoncontext *)(map + offset))->dm;
+		pvr_fw_object_vunmap(fw_obj);
+	} else if (type == ROGUE_FWIF_CLEANUP_HWRTDATA) {
+		cmd.dm = DDK19_DM_3D;
+	}
+
+	guard(mutex)(&ddk19->sync_lock);
+
+	WRITE_ONCE(*sync, 0);
+
+	err = pvr_ddk19_kccb_send(pvr_dev, &cmd);
+	if (err)
+		return err;
+
+	err = read_poll_timeout(READ_ONCE, v, v & DDK19_CLEANUP_RUN, 100, 1000000, false, *sync);
+	if (err)
+		return err;
+
+	return (v & DDK19_CLEANUP_BUSY) ? -EBUSY : 0;
+}
+
+int pvr_ddk19_kick(struct pvr_device *pvr_dev, u32 dm, u32 ctx_fw_addr, u32 write_offset)
+{
+	struct ddk19_fwif_kccb_cmd cmd = {
+		.cmd_type = DDK19_KCCB_CMD_KICK,
+		.dm = dm,
+		.data.kick = {
+			.context_fw_addr = ctx_fw_addr,
+			.client_woff_update = write_offset,
+		},
+	};
+
+	wmb();
+
+	return pvr_ddk19_kccb_send(pvr_dev, &cmd);
+}
+
+static u32 pvr_ddk19_ccb_cmd_type(u32 type)
+{
+	switch (type) {
+	case ROGUE_FWIF_CCB_CMD_TYPE_GEOM:
+		return DDK19_CCB_CMD_TYPE_TA;
+	case ROGUE_FWIF_CCB_CMD_TYPE_FRAG:
+		return DDK19_CCB_CMD_TYPE_3D;
+	case ROGUE_FWIF_CCB_CMD_TYPE_FRAG_PR:
+		return DDK19_CCB_CMD_TYPE_3D_PR;
+	case ROGUE_FWIF_CCB_CMD_TYPE_CDM:
+		return DDK19_CCB_CMD_TYPE_CDM;
+	case ROGUE_FWIF_CCB_CMD_TYPE_TQ_3D:
+		return DDK19_CCB_CMD_TYPE_TQ_3D;
+	case ROGUE_FWIF_CCB_CMD_TYPE_TQ_TDM:
+		return DDK19_CCB_CMD_TYPE_TQ_TDM;
+	case ROGUE_FWIF_CCB_CMD_TYPE_NULL:
+		return DDK19_CCB_CMD_TYPE_NULL;
+	case ROGUE_FWIF_CCB_CMD_TYPE_FENCE:
+		return DDK19_CCB_CMD_TYPE_FENCE;
+	case ROGUE_FWIF_CCB_CMD_TYPE_UPDATE:
+		return DDK19_CCB_CMD_TYPE_UPDATE;
+	case ROGUE_FWIF_CCB_CMD_TYPE_RMW_UPDATE:
+		return DDK19_CCB_CMD_TYPE_RMW_UPDATE;
+	case ROGUE_FWIF_CCB_CMD_TYPE_FENCE_PR:
+		return DDK19_CCB_CMD_TYPE_FENCE_PR;
+	case ROGUE_FWIF_CCB_CMD_TYPE_PRIORITY:
+		return DDK19_CCB_CMD_TYPE_PRIORITY;
+	case ROGUE_FWIF_CCB_CMD_TYPE_PADDING:
+		return DDK19_CCB_CMD_TYPE_PADDING;
+	}
+
+	WARN(1, "ddk19: no CCB command type for 0x%x\n", type);
+	return DDK19_CCB_CMD_TYPE_PADDING;
+}
+
+void pvr_ddk19_cccb_write(struct pvr_cccb *cccb, u32 cmd_type, u32 cmd_size, void *cmd_data,
+			  u32 ext_job_ref, u32 int_job_ref)
+{
+	const u32 hdr_size = sizeof(struct ddk19_fwif_ccb_cmd_header);
+	struct ddk19_fwif_ccb_cmd_header hdr = {
+		.cmd_type = pvr_ddk19_ccb_cmd_type(cmd_type),
+		.cmd_size = ALIGN(cmd_size, 8),
+		.ext_job_ref = ext_job_ref,
+		.int_job_ref = int_job_ref,
+	};
+	u32 size = hdr_size + ALIGN(cmd_size, 8);
+	u32 remaining = cccb->size - cccb->write_offset;
+	u32 required = size;
+	u32 space;
+
+	if (remaining < size + hdr_size)
+		required += remaining;
+
+	space = (READ_ONCE(cccb->ctrl->read_offset) - cccb->write_offset + cccb->size - 1) &
+		(cccb->size - 1);
+	if (WARN_ON(space < required))
+		return;
+
+	if (required != size) {
+		struct ddk19_fwif_ccb_cmd_header pad = {
+			.cmd_type = DDK19_CCB_CMD_TYPE_PADDING,
+			.cmd_size = remaining - hdr_size,
+		};
+
+		memcpy(&cccb->cccb[cccb->write_offset], &pad, sizeof(pad));
+		cccb->write_offset = 0;
+	}
+
+	memcpy(&cccb->cccb[cccb->write_offset], &hdr, sizeof(hdr));
+	memcpy(&cccb->cccb[cccb->write_offset + hdr_size], cmd_data, cmd_size);
+	cccb->write_offset = (cccb->write_offset + size) & cccb->wrap_mask;
+}
+
+u32 pvr_ddk19_fw_ctx_size(enum drm_pvr_ctx_type type)
+{
+	switch (type) {
+	case DRM_PVR_CTX_TYPE_COMPUTE:
+		return sizeof(struct ddk19_fwif_fwcommoncontext) +
+		       sizeof(struct rogue_fwif_static_computecontext_state);
+	default:
+		return 0;
+	}
+}
+
+u32 pvr_ddk19_static_state_offset(enum drm_pvr_ctx_type type)
+{
+	return sizeof(struct ddk19_fwif_fwcommoncontext);
+}
+
+u32 pvr_ddk19_ctx_state_size(enum drm_pvr_job_type type)
+{
+	return DDK19_CTX_STATE_SIZE + DDK19_RF_CMD_SIZE;
+}
+
+void pvr_ddk19_init_common_context(void *dst, u32 ccbctl_fw_addr, u32 ccb_fw_addr,
+				   u32 fw_mem_ctx_fw_addr, u32 ctx_state_fw_addr, u32 priority,
+				   u32 ctx_id, u32 dm)
+{
+	struct ddk19_fwif_fwcommoncontext *cctx = dst;
+
+	cctx->ccbctl_fw_addr = ccbctl_fw_addr;
+	cctx->ccb_fw_addr = ccb_fw_addr;
+	cctx->fw_mem_context_fw_addr = fw_mem_ctx_fw_addr;
+	cctx->context_state_fw_addr = ctx_state_fw_addr;
+	cctx->rf_cmd_fw_addr = ctx_state_fw_addr + DDK19_CTX_STATE_SIZE;
+	cctx->priority = priority;
+	cctx->server_common_context_id = ctx_id;
+	cctx->pid = task_tgid_nr(current);
+	cctx->dm = dm;
+}
+
+u32 pvr_ddk19_job_cmd_len(struct pvr_job *job)
+{
+	switch (job->type) {
+	case DRM_PVR_JOB_TYPE_COMPUTE:
+		return sizeof(struct ddk19_fwif_cmd_compute);
+	default:
+		return job->cmd_len;
+	}
+}
+
+u32 pvr_ddk19_job_cmd(struct pvr_job *job, void *out)
+{
+	switch (job->type) {
+	case DRM_PVR_JOB_TYPE_COMPUTE: {
+		const struct rogue_fwif_cmd_compute *in = job->cmd;
+		const struct rogue_fwif_static_computecontext_state *state =
+			job->ctx->data + pvr_ddk19_static_state_offset(job->ctx->type);
+		const struct rogue_fwif_cdm_registers_cswitch *cs = &state->ctxswitch_regs;
+		struct ddk19_fwif_cmd_compute *cmd = out;
+
+		memset(cmd, 0, sizeof(*cmd));
+		cmd->cdm_ctrl_stream_base = in->regs.cdm_ctrl_stream_base;
+		cmd->tpu_border_colour_table = in->regs.tpu_border_colour_table;
+		cmd->tpu = in->regs.tpu;
+		cmd->cdm_context_state_base_addr = in->regs.cdm_context_state_base_addr;
+		cmd->cdm_context_pds0 = cs->cdmreg_cdm_context_pds0;
+		cmd->cdm_context_pds1 = cs->cdmreg_cdm_context_pds1;
+		cmd->cdm_terminate_pds = cs->cdmreg_cdm_terminate_pds;
+		cmd->cdm_terminate_pds1 = cs->cdmreg_cdm_terminate_pds1;
+		cmd->cdm_resume_pds0 = cs->cdmreg_cdm_resume_pds0;
+		cmd->cdm_resume_pds1 = in->regs.cdm_resume_pds1;
+		return sizeof(*cmd);
+	}
+	default:
+		memcpy(out, job->cmd, job->cmd_len);
+		return job->cmd_len;
+	}
+}
+
+
 
 static int pvr_ddk19_pow_request(struct pvr_device *pvr_dev, u32 pow_type, u32 request,
 				 u32 pow_state)
@@ -859,6 +1095,41 @@ void pvr_ddk19_debugfs_init(struct pvr_device *pvr_dev, struct dentry *root)
 
 	debugfs_create_file("state", 0400, dir, pvr_dev, &pvr_ddk19_state_fops);
 	debugfs_create_file("sync", 0200, dir, pvr_dev, &pvr_ddk19_sync_fops);
+}
+
+bool pvr_ddk19_va_reserved(struct pvr_device *pvr_dev, u64 device_addr, u64 size)
+{
+	static const u64 base[] = { DDK19_MMU_INIA_BRN_65273_BASE, DDK19_MMU_INIB_BRN_65273_BASE };
+
+	if (!pvr_dev->device_data->ddk19)
+		return false;
+
+	for (int i = 0; i < ARRAY_SIZE(base); i++) {
+		if (device_addr >= base[i] && device_addr + size <= base[i] + SZ_1G)
+			return true;
+	}
+
+	return false;
+}
+
+int pvr_ddk19_vm_context_init(struct pvr_device *pvr_dev, struct pvr_vm_context *vm_ctx)
+{
+	static const u64 rgn_hdr_addr[] = { DDK19_MMU_INIA_BRN_65273_BASE,
+					    DDK19_MMU_INIB_BRN_65273_BASE };
+	struct pvr_gem_object *pvr_obj;
+	int err = 0;
+
+	/* BRN 65273: the GPU writes a region header at the start of both heaps. */
+	pvr_obj = pvr_gem_object_create(pvr_dev, DDK19_BRN_65273_RGN_HDR_SIZE, 0);
+	if (IS_ERR(pvr_obj))
+		return PTR_ERR(pvr_obj);
+
+	for (int i = 0; i < ARRAY_SIZE(rgn_hdr_addr) && !err; i++)
+		err = pvr_vm_map(vm_ctx, pvr_obj, 0, rgn_hdr_addr[i], DDK19_BRN_65273_RGN_HDR_SIZE);
+
+	pvr_gem_object_put(pvr_obj);
+
+	return err;
 }
 
 int pvr_ddk19_fw_init(struct pvr_device *pvr_dev)

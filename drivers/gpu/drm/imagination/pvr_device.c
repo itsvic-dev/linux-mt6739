@@ -216,6 +216,7 @@ static irqreturn_t pvr_device_irq_thread_handler(int irq, void *data)
 
 		if (READ_ONCE(pvr_dev->fw_dev.initialised) && pvr_dev->device_data->ddk19) {
 			pvr_ddk19_process_irq(pvr_dev);
+			pvr_device_process_active_queues(pvr_dev);
 		} else if (READ_ONCE(pvr_dev->fw_dev.initialised)) {
 			pvr_fwccb_process(pvr_dev);
 			pvr_kccb_wake_up_waiters(pvr_dev);

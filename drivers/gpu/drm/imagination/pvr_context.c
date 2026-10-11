@@ -3,6 +3,7 @@
 
 #include "pvr_cccb.h"
 #include "pvr_context.h"
+#include "pvr_ddk19.h"
 #include "pvr_device.h"
 #include "pvr_drv.h"
 #include "pvr_gem.h"
@@ -114,7 +115,10 @@ static int init_compute_fw_objs(struct pvr_context *ctx,
 	if (!args->static_context_state_len)
 		return -EINVAL;
 
-	ctxswitch_regs = &fw_compute_context->static_compute_context_state.ctxswitch_regs;
+	if (ctx->pvr_dev->device_data->ddk19)
+		ctxswitch_regs = fw_ctx_map + pvr_ddk19_static_state_offset(ctx->type);
+	else
+		ctxswitch_regs = &fw_compute_context->static_compute_context_state.ctxswitch_regs;
 
 	/* Copy static render context state from userspace. */
 	return process_static_context_state(ctx->pvr_dev,
@@ -290,7 +294,10 @@ int pvr_context_create(struct pvr_file *pvr_file, struct drm_pvr_ioctl_create_co
 	if (args->flags)
 		return -EINVAL;
 
-	ctx_size = get_fw_obj_size(args->type);
+	if (pvr_dev->device_data->ddk19)
+		ctx_size = pvr_ddk19_fw_ctx_size(args->type) ?: -EOPNOTSUPP;
+	else
+		ctx_size = get_fw_obj_size(args->type);
 	if (ctx_size < 0)
 		return ctx_size;
 

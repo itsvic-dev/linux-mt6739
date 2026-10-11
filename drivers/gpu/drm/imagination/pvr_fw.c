@@ -1125,6 +1125,11 @@ pvr_fw_structure_cleanup(struct pvr_device *pvr_dev, u32 type, struct pvr_fw_obj
 		goto err_up_read;
 	}
 
+	if (pvr_dev->device_data->ddk19) {
+		err = pvr_ddk19_cleanup(pvr_dev, type, fw_obj, offset);
+		goto err_drm_dev_exit;
+	}
+
 	cmd.cmd_type = ROGUE_FWIF_KCCB_CMD_CLEANUP;
 	cmd.kccb_flags = 0;
 	cleanup_req->cleanup_type = type;

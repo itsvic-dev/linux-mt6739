@@ -6,6 +6,7 @@
 
 #include "pvr_cccb.h"
 #include "pvr_context.h"
+#include "pvr_ddk19.h"
 #include "pvr_device.h"
 #include "pvr_drv.h"
 #include "pvr_job.h"
@@ -73,6 +74,9 @@ static int get_frag_ctx_state_size(struct pvr_device *pvr_dev)
 
 static int get_ctx_state_size(struct pvr_device *pvr_dev, enum drm_pvr_job_type type)
 {
+	if (pvr_dev->device_data->ddk19)
+		return pvr_ddk19_ctx_state_size(type);
+
 	switch (type) {
 	case DRM_PVR_JOB_TYPE_GEOMETRY:
 		return sizeof(struct rogue_fwif_geom_ctx_state);
@@ -380,8 +384,11 @@ static u32 job_cmds_size(struct pvr_job *job, u32 ufo_wait_count)
 	 * signaled by the time the job is submitted), plus a command for the job itself,
 	 * plus one UFO command for the fence signaling.
 	 */
+	u32 cmd_len = job->pvr_dev->device_data->ddk19 ? pvr_ddk19_job_cmd_len(job) :
+							  job->cmd_len;
+
 	return ufo_cmds_size(ufo_wait_count) +
-	       pvr_cccb_get_size_of_cmd_with_hdr(job->cmd_len) +
+	       pvr_cccb_get_size_of_cmd_with_hdr(cmd_len) +
 	       ufo_cmds_size(1);
 }
 
@@ -727,8 +734,16 @@ static void pvr_queue_submit_job_to_cccb(struct pvr_job *job)
 	}
 
 	/* Submit job to FW */
-	pvr_cccb_write_command_with_header(cccb, job->fw_ccb_cmd_type, job->cmd_len, job->cmd,
-					   job->id, job->id);
+	if (job->pvr_dev->device_data->ddk19) {
+		u8 cmd[PVR_DDK19_JOB_CMD_MAX_SIZE] __aligned(8);
+		u32 cmd_len = pvr_ddk19_job_cmd(job, cmd);
+
+		pvr_cccb_write_command_with_header(cccb, job->fw_ccb_cmd_type, cmd_len, cmd,
+						   job->id, job->id);
+	} else {
+		pvr_cccb_write_command_with_header(cccb, job->fw_ccb_cmd_type, job->cmd_len,
+						   job->cmd, job->id, job->id);
+	}
 
 	/* Update command to signal the job fence. */
 	pvr_fw_object_get_fw_addr(queue->timeline_ufo.fw_obj, &ufos[0].addr);
@@ -1091,6 +1106,18 @@ static void init_fw_context(struct pvr_queue *queue, void *fw_ctx_map)
 	struct rogue_fwif_fwcommoncontext *cctx_fw;
 	struct pvr_cccb *cccb = &queue->cccb;
 
+	if (ctx->pvr_dev->device_data->ddk19) {
+		u32 mem_ctx_fw_addr, state_fw_addr;
+
+		cccb->dm = get_dm_type(queue);
+		pvr_fw_object_get_fw_addr(fw_mem_ctx_obj, &mem_ctx_fw_addr);
+		pvr_fw_object_get_fw_addr(queue->reg_state_obj, &state_fw_addr);
+		pvr_ddk19_init_common_context(fw_ctx_map + queue->ctx_offset, cccb->ctrl_fw_addr,
+					      cccb->cccb_fw_addr, mem_ctx_fw_addr, state_fw_addr,
+					      ctx->priority, ctx->ctx_id, get_dm_type(queue));
+		return;
+	}
+
 	cctx_fw = fw_ctx_map + queue->ctx_offset;
 	cctx_fw->ccbctl_fw_addr = cccb->ctrl_fw_addr;
 	cctx_fw->ccb_fw_addr = cccb->cccb_fw_addr;
@@ -1328,7 +1355,7 @@ struct pvr_queue *pvr_queue_create(struct pvr_context *ctx,
 		return ERR_PTR(-ENOMEM);
 
 	queue->type = type;
-	queue->ctx_offset = get_ctx_offset(type);
+	queue->ctx_offset = pvr_dev->device_data->ddk19 ? 0 : get_ctx_offset(type);
 	queue->ctx = ctx;
 	queue->callstack_addr = args->callstack_addr;
 	sched = &queue->scheduler;
