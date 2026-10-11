@@ -30,6 +30,7 @@
 		device-chemistry = "lithium-ion";
 		voltage-min-design-microvolt = <3400000>;
 		voltage-max-design-microvolt = <4350000>;
+		charge-full-design-microamp-hours = <2500000>;
 		constant-charge-voltage-max-microvolt = <4200000>;
 		constant-charge-current-max-microamp = <450000>;
 		charge-term-current-microamp = <150000>;
@@ -41,14 +42,6 @@
 				       <3781300 40>, <3774800 35>, <3770400 30>,
 				       <3758900 25>, <3741700 20>, <3717300 15>,
 				       <3687800 10>, <3667500 5>, <3327000 0>;
-	};
-
-	fuel-gauge {
-		compatible = "adc-battery";
-		io-channels = <&pmic_adc MT6357_AUXADC_BATADC>;
-		io-channel-names = "voltage";
-		monitored-battery = <&battery>;
-		power-supplies = <&pmic_charger>;
 	};
 
 	reserved-memory {
