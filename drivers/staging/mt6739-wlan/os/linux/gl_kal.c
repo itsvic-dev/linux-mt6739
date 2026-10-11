@@ -3660,13 +3660,9 @@ UINT_32 kalGetMfpSetting(IN P_GLUE_INFO_T prGlueInfo)
 struct file *kalFileOpen(const char *path, int flags, int rights)
 {
 	struct file *filp = NULL;
-	mm_segment_t oldfs;
 	int err = 0;
 
-	oldfs = get_fs();
-	set_fs(get_ds());
 	filp = filp_open(path, flags, rights);
-	set_fs(oldfs);
 	if (IS_ERR(filp)) {
 		err = PTR_ERR(filp);
 		return NULL;
@@ -3681,30 +3677,16 @@ VOID kalFileClose(struct file *file)
 
 UINT_32 kalFileRead(struct file *file, UINT_64 offset, UINT_8 *data, UINT_32 size)
 {
-	mm_segment_t oldfs;
-	INT_32 ret;
+	loff_t pos = offset;
 
-	oldfs = get_fs();
-	set_fs(get_ds());
-
-	ret = vfs_read(file, data, size, &offset);
-
-	set_fs(oldfs);
-	return ret;
+	return kernel_read(file, data, size, &pos);
 }
 
 UINT_32 kalFileWrite(struct file *file, UINT_64 offset, UINT_8 *data, UINT_32 size)
 {
-	mm_segment_t oldfs;
-	INT_32 ret;
+	loff_t pos = offset;
 
-	oldfs = get_fs();
-	set_fs(get_ds());
-
-	ret = vfs_write(file, data, size, &offset);
-
-	set_fs(oldfs);
-	return ret;
+	return kernel_write(file, data, size, &pos);
 }
 
 UINT_32 kalWriteToFile(const PUINT_8 pucPath, BOOLEAN fgDoAppend, PUINT_8 pucData, UINT_32 u4Size)
