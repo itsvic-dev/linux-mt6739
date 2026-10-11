@@ -85,6 +85,17 @@ config SERIAL_EARLYCON_SEMIHOST
 	  This is enabled with "earlycon=smh" on the kernel command line.
 	  The console is enabled when early_param is processed.
 
+config SERIAL_EARLYCON_PSTORE_RAM
+	bool "Early console into a persistent_ram zone"
+	depends on HAS_IOMEM
+	select SERIAL_CORE
+	select SERIAL_CORE_CONSOLE
+	select SERIAL_EARLYCON
+	help
+	  Write the early console into a pstore persistent_ram zone in DRAM,
+	  so that another kernel can read it as console-ramoops after a reset.
+	  Use with "earlycon=pstoreram,<phys addr> keep_bootcon".
+
 config SERIAL_EARLYCON_RISCV_SBI
 	bool "Early console using RISC-V SBI"
 	depends on RISCV_SBI
