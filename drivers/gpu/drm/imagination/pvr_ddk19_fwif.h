@@ -59,6 +59,7 @@
 #define DDK19_PDS_CTRL_MAX_NUM_CDM_TASKS (48ull << 24)
 
 #define DDK19_DM_GP 0
+#define DDK19_DM_TA 2
 #define DDK19_DM_3D 3
 #define DDK19_DM_CDM 4
 
@@ -379,6 +380,70 @@ struct ddk19_fwif_freelist {
 	u32 padding;
 };
 
+struct ddk19_fwif_render_target {
+	u64 vheap_table_dev_addr;
+	u32 ta_caches_need_zeroing;
+	u32 padding;
+};
+
+struct ddk19_fwif_rta_ctl {
+	u32 render_target_index;
+	u32 current_render_target;
+	u32 active_render_targets;
+	u32 cumul_active_render_targets;
+	u32 valid_render_targets_fw_addr;
+	u32 num_renders_fw_addr;
+	u16 max_rts;
+	u8 padding[6];
+};
+
+struct ddk19_fwif_hwrtdata {
+	u32 state;
+	u32 num_partial_renders;
+	u32 last_was_partial;
+	u32 padding0;
+	u64 pm_mlist_dev_addr;
+	u64 vce_cat_base[4];
+	u64 vce_last_cat_base[4];
+	u64 te_cat_base[4];
+	u64 te_last_cat_base[4];
+	u64 alist_cat_base;
+	u64 alist_last_cat_base;
+	u64 pm_alist_stack_pointer;
+	u32 pm_mlist_stack_pointer;
+	u32 padding1;
+	u32 freelists_fw_addr[2];
+	u32 freelist_hwr_snapshot[2];
+	u32 parent_render_target_fw_addr;
+	u32 padding2;
+	u32 ta_cleanup_ctl[2];
+	u32 cleanup_ctl_3d[2];
+	u32 cleanup_status;
+	u32 rta_ctl_fw_addr;
+	u32 has_last_ta;
+	u32 partial_rendered;
+	u32 ppp_screen;
+	u32 ppp_grid_offset;
+	u64 ppp_multi_sample_ctl;
+	u32 tpc_stride;
+	u32 padding3;
+	u64 tail_ptrs_dev_addr;
+	u32 tpc_size;
+	u32 te_screen;
+	u32 mtile_stride;
+	u32 teaa;
+	u32 te_mtile1;
+	u32 te_mtile2;
+	u32 isp_merge_lower_x;
+	u32 isp_merge_lower_y;
+	u32 isp_merge_upper_x;
+	u32 isp_merge_upper_y;
+	u32 isp_merge_scale_x;
+	u32 isp_merge_scale_y;
+	u32 disable_tile_reordering;
+	u32 owner_ta_fw_addr;
+};
+
 struct ddk19_fwif_fwccb_cmd {
 	u32 cmd_type;
 	u32 padding;
@@ -414,6 +479,23 @@ DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, read_offset_needs_reset, 152);
 
 static_assert(sizeof(struct ddk19_fwif_cmd_compute) == 120);
 
+static_assert(sizeof(struct ddk19_fwif_render_target) == 16);
+static_assert(sizeof(struct ddk19_fwif_rta_ctl) == 32);
+DDK19_CHECK(struct ddk19_fwif_rta_ctl, max_rts, 24);
+static_assert(sizeof(struct ddk19_fwif_hwrtdata) == 328);
+DDK19_CHECK(struct ddk19_fwif_hwrtdata, pm_mlist_dev_addr, 16);
+DDK19_CHECK(struct ddk19_fwif_hwrtdata, pm_mlist_stack_pointer, 176);
+DDK19_CHECK(struct ddk19_fwif_hwrtdata, freelists_fw_addr, 184);
+DDK19_CHECK(struct ddk19_fwif_hwrtdata, parent_render_target_fw_addr, 200);
+DDK19_CHECK(struct ddk19_fwif_hwrtdata, ta_cleanup_ctl, 208);
+DDK19_CHECK(struct ddk19_fwif_hwrtdata, rta_ctl_fw_addr, 228);
+DDK19_CHECK(struct ddk19_fwif_hwrtdata, ppp_screen, 240);
+DDK19_CHECK(struct ddk19_fwif_hwrtdata, ppp_multi_sample_ctl, 248);
+DDK19_CHECK(struct ddk19_fwif_hwrtdata, tpc_stride, 256);
+DDK19_CHECK(struct ddk19_fwif_hwrtdata, tail_ptrs_dev_addr, 264);
+DDK19_CHECK(struct ddk19_fwif_hwrtdata, tpc_size, 272);
+DDK19_CHECK(struct ddk19_fwif_hwrtdata, isp_merge_lower_x, 296);
+DDK19_CHECK(struct ddk19_fwif_hwrtdata, disable_tile_reordering, 320);
 static_assert(sizeof(struct ddk19_fwif_freelist) == 64);
 DDK19_CHECK(struct ddk19_fwif_freelist, hwr_counter, 40);
 DDK19_CHECK(struct ddk19_fwif_freelist, oom_ready_limit, 56);

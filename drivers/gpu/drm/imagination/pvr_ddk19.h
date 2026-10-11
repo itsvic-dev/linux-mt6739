@@ -13,6 +13,8 @@ struct dentry;
 struct pvr_cccb;
 struct pvr_device;
 struct pvr_fw_object;
+struct pvr_hwrt_data;
+struct pvr_hwrt_dataset;
 struct pvr_job;
 struct pvr_vm_context;
 struct pvr_power_sequence_ops;
@@ -46,6 +48,8 @@ void pvr_ddk19_init_common_context(void *dst, u32 ccbctl_fw_addr, u32 ccb_fw_add
 				   u32 rf_cmd_fw_addr, u32 priority, u32 ctx_id, u32 dm);
 void pvr_ddk19_free_list_init(void *dst, u64 dev_addr, u32 max_pages, u32 current_pages,
 			      u32 grow_pages, u32 ready_pages, u32 id);
+int pvr_ddk19_hwrt_common_init(struct pvr_hwrt_dataset *hwrt, u64 vheap_table_dev_addr);
+int pvr_ddk19_hwrt_data_init(struct pvr_hwrt_data *hwrt_data);
 u32 pvr_ddk19_job_cmd_len(struct pvr_job *job);
 u32 pvr_ddk19_job_cmd(struct pvr_job *job, void *out);
 int pvr_ddk19_vm_context_init(struct pvr_device *pvr_dev, struct pvr_vm_context *vm_ctx);

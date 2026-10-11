@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /* Copyright (c) 2023 Imagination Technologies Ltd. */
 
+#include "pvr_ddk19.h"
+#include "pvr_device.h"
 #include "pvr_free_list.h"
 #include "pvr_hwrt.h"
 #include "pvr_gem.h"
@@ -254,7 +256,7 @@ hwrt_init_common_fw_structure(struct pvr_file *pvr_file,
 		if (WARN_ON(err))
 			return err;
 
-		WARN_ON(parameter_format != 2);
+		WARN_ON(parameter_format != 2 && !pvr_dev->device_data->ddk19);
 
 		/*
 		 * Set up 16 macrotiles with a multiple of 2x2 tiles per macrotile, which is
@@ -335,6 +337,9 @@ hwrt_init_common_fw_structure(struct pvr_file *pvr_file,
 
 	hwrt->common.rgn_header_size = args->region_header_size;
 
+	if (pvr_dev->device_data->ddk19)
+		return pvr_ddk19_hwrt_common_init(hwrt, geom_data_args->vheap_table_dev_addr);
+
 	err = pvr_fw_object_create(pvr_dev, sizeof(struct rogue_fwif_hwrtdata_common),
 				   PVR_BO_FW_FLAGS_DEVICE_UNCACHED, hwrtdata_common_init, hwrt,
 				   &hwrt->common_fw_obj);
@@ -404,9 +409,12 @@ hwrt_data_init_fw_structure(struct pvr_file *pvr_file,
 					  &rta_ctl->rta_num_partial_renders_fw_addr);
 	}
 
-	err = pvr_fw_object_create(pvr_dev, sizeof(struct rogue_fwif_hwrtdata),
-				   PVR_BO_FW_FLAGS_DEVICE_UNCACHED,
-				   hwrt_fw_data_init, hwrt_data, &hwrt_data->fw_obj);
+	if (pvr_dev->device_data->ddk19)
+		err = pvr_ddk19_hwrt_data_init(hwrt_data);
+	else
+		err = pvr_fw_object_create(pvr_dev, sizeof(struct rogue_fwif_hwrtdata),
+					   PVR_BO_FW_FLAGS_DEVICE_UNCACHED,
+					   hwrt_fw_data_init, hwrt_data, &hwrt_data->fw_obj);
 	if (err)
 		goto err_put_raa_obj;
 
@@ -438,6 +446,8 @@ hwrt_data_fini_fw_structure(struct pvr_hwrt_dataset *hwrt, int hwrt_nr)
 	}
 
 	pvr_fw_object_destroy(hwrt_data->fw_obj);
+	if (hwrt_data->rta_ctl_obj)
+		pvr_fw_object_destroy(hwrt_data->rta_ctl_obj);
 }
 
 /**
@@ -471,13 +481,13 @@ pvr_hwrt_dataset_create(struct pvr_file *pvr_file,
 		goto err_fini_kernel_structure;
 
 	for (; i < ARRAY_SIZE(hwrt->data); i++) {
+		hwrt->data[i].hwrt_dataset = hwrt;
+
 		err = hwrt_data_init_fw_structure(pvr_file, hwrt, args,
 						  &args->rt_data_args[i],
 						  &hwrt->data[i]);
 		if (err < 0)
 			goto err_fini_data_structures;
-
-		hwrt->data[i].hwrt_dataset = hwrt;
 	}
 
 	kref_init(&hwrt->ref_count);

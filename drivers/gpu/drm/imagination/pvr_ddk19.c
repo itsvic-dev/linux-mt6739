@@ -10,6 +10,7 @@
 #include "pvr_fw_mips.h"
 #include "pvr_fw_startstop.h"
 #include "pvr_gem.h"
+#include "pvr_hwrt.h"
 #include "pvr_job.h"
 #include "pvr_mmu.h"
 #include "pvr_power.h"
@@ -727,34 +728,21 @@ static int pvr_ddk19_mmu_flush_powered(struct pvr_device *pvr_dev, u32 flags)
 			      1000000);
 }
 
-static int pvr_ddk19_cleanup_powered(struct pvr_device *pvr_dev, u32 type,
-				     struct pvr_fw_object *fw_obj, u32 offset)
+static int pvr_ddk19_cleanup_dm(struct pvr_device *pvr_dev, u32 type, u32 fw_addr, u32 dm)
 {
 	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
 	struct ddk19_fwif_kccb_cmd cmd = {
 		.cmd_type = DDK19_KCCB_CMD_CLEANUP,
-		.dm = DDK19_DM_GP,
+		.dm = dm,
 		.data.cleanup = {
 			.cleanup_type = type,
+			.fw_addr = fw_addr,
 			.sync_fw_addr = ddk19->sync_fw_addr + DDK19_SYNC_CLEANUP * sizeof(u32),
 		},
 	};
 	u32 *sync = &ddk19->sync[DDK19_SYNC_CLEANUP];
 	u32 v;
 	int err;
-
-	pvr_fw_object_get_fw_addr_offset(fw_obj, offset, &cmd.data.cleanup.fw_addr);
-
-	if (type == ROGUE_FWIF_CLEANUP_FWCOMMONCONTEXT) {
-		u8 *map = pvr_fw_object_vmap(fw_obj);
-
-		if (IS_ERR(map))
-			return PTR_ERR(map);
-		cmd.dm = ((struct ddk19_fwif_fwcommoncontext *)(map + offset))->dm;
-		pvr_fw_object_vunmap(fw_obj);
-	} else if (type == ROGUE_FWIF_CLEANUP_HWRTDATA) {
-		cmd.dm = DDK19_DM_3D;
-	}
 
 	guard(mutex)(&ddk19->sync_lock);
 
@@ -769,6 +757,32 @@ static int pvr_ddk19_cleanup_powered(struct pvr_device *pvr_dev, u32 type,
 		return err;
 
 	return (v & DDK19_CLEANUP_BUSY) ? -EBUSY : 0;
+}
+
+static int pvr_ddk19_cleanup_powered(struct pvr_device *pvr_dev, u32 type,
+				     struct pvr_fw_object *fw_obj, u32 offset)
+{
+	u32 dm = DDK19_DM_GP;
+	u32 fw_addr;
+	int err;
+
+	pvr_fw_object_get_fw_addr_offset(fw_obj, offset, &fw_addr);
+
+	if (type == ROGUE_FWIF_CLEANUP_FWCOMMONCONTEXT) {
+		u8 *map = pvr_fw_object_vmap(fw_obj);
+
+		if (IS_ERR(map))
+			return PTR_ERR(map);
+		dm = ((struct ddk19_fwif_fwcommoncontext *)(map + offset))->dm;
+		pvr_fw_object_vunmap(fw_obj);
+	} else if (type == ROGUE_FWIF_CLEANUP_HWRTDATA) {
+		err = pvr_ddk19_cleanup_dm(pvr_dev, type, fw_addr, DDK19_DM_TA);
+		if (err)
+			return err;
+		dm = DDK19_DM_3D;
+	}
+
+	return pvr_ddk19_cleanup_dm(pvr_dev, type, fw_addr, dm);
 }
 
 int pvr_ddk19_sync(struct pvr_device *pvr_dev)
@@ -984,6 +998,80 @@ void pvr_ddk19_free_list_init(void *dst, u64 dev_addr, u32 max_pages, u32 curren
 	fl->freelist_id = id;
 	fl->ready_pages = ready_pages;
 	fl->oom_ready_limit = ready_pages;
+}
+
+static void ddk19_render_target_init(void *cpu_ptr, void *priv)
+{
+	struct ddk19_fwif_render_target *rt = cpu_ptr;
+
+	rt->vheap_table_dev_addr = *(u64 *)priv;
+}
+
+int pvr_ddk19_hwrt_common_init(struct pvr_hwrt_dataset *hwrt, u64 vheap_table_dev_addr)
+{
+	return pvr_fw_object_create(hwrt->pvr_dev, sizeof(struct ddk19_fwif_render_target),
+				    PVR_BO_FW_FLAGS_DEVICE_UNCACHED, ddk19_render_target_init,
+				    &vheap_table_dev_addr, &hwrt->common_fw_obj);
+}
+
+static void ddk19_rta_ctl_init(void *cpu_ptr, void *priv)
+{
+	struct rogue_fwif_rta_ctl *src = priv;
+	struct ddk19_fwif_rta_ctl *rta_ctl = cpu_ptr;
+
+	rta_ctl->valid_render_targets_fw_addr = src->valid_render_targets_fw_addr;
+	rta_ctl->num_renders_fw_addr = src->rta_num_partial_renders_fw_addr;
+	rta_ctl->max_rts = max_t(u16, src->max_rts, 1);
+}
+
+static void ddk19_hwrtdata_init(void *cpu_ptr, void *priv)
+{
+	struct pvr_hwrt_data *hwrt_data = priv;
+	struct pvr_hwrt_dataset *hwrt = hwrt_data->hwrt_dataset;
+	struct rogue_fwif_hwrtdata_common *common = &hwrt->common;
+	struct ddk19_fwif_hwrtdata *dst = cpu_ptr;
+
+	dst->pm_mlist_dev_addr = hwrt_data->data.pm_mlist_dev_addr;
+	for (int i = 0; i < ARRAY_SIZE(dst->freelists_fw_addr); i++)
+		dst->freelists_fw_addr[i] = hwrt_data->data.freelists_fw_addr[i];
+	pvr_fw_object_get_fw_addr(hwrt->common_fw_obj, &dst->parent_render_target_fw_addr);
+	pvr_fw_object_get_fw_addr(hwrt_data->rta_ctl_obj, &dst->rta_ctl_fw_addr);
+	dst->ppp_screen = common->screen_pixel_max;
+	dst->ppp_multi_sample_ctl = common->multi_sample_ctl;
+	dst->tpc_stride = common->tpc_stride;
+	dst->tail_ptrs_dev_addr = hwrt_data->data.tail_ptrs_dev_addr;
+	dst->tpc_size = common->tpc_size;
+	dst->te_screen = common->te_screen;
+	dst->mtile_stride = common->mtile_stride;
+	dst->teaa = common->teaa;
+	dst->te_mtile1 = common->te_mtile1;
+	dst->te_mtile2 = common->te_mtile2;
+	dst->isp_merge_lower_x = common->isp_merge_lower_x;
+	dst->isp_merge_lower_y = common->isp_merge_lower_y;
+	dst->isp_merge_upper_x = common->isp_merge_upper_x;
+	dst->isp_merge_upper_y = common->isp_merge_upper_y;
+	dst->isp_merge_scale_x = common->isp_merge_scale_x;
+	dst->isp_merge_scale_y = common->isp_merge_scale_y;
+}
+
+int pvr_ddk19_hwrt_data_init(struct pvr_hwrt_data *hwrt_data)
+{
+	struct pvr_device *pvr_dev = hwrt_data->hwrt_dataset->pvr_dev;
+	int err;
+
+	err = pvr_fw_object_create(pvr_dev, sizeof(struct ddk19_fwif_rta_ctl),
+				   PVR_BO_FW_FLAGS_DEVICE_UNCACHED, ddk19_rta_ctl_init,
+				   &hwrt_data->data.rta_ctl, &hwrt_data->rta_ctl_obj);
+	if (err)
+		return err;
+
+	err = pvr_fw_object_create(pvr_dev, sizeof(struct ddk19_fwif_hwrtdata),
+				   PVR_BO_FW_FLAGS_DEVICE_UNCACHED, ddk19_hwrtdata_init,
+				   hwrt_data, &hwrt_data->fw_obj);
+	if (err)
+		pvr_fw_object_destroy(hwrt_data->rta_ctl_obj);
+
+	return err;
 }
 
 u32 pvr_ddk19_job_cmd_len(struct pvr_job *job)

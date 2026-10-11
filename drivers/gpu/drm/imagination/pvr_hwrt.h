@@ -47,6 +47,8 @@ struct pvr_hwrt_data {
 	 */
 	struct pvr_fw_object *raa_obj;
 
+	struct pvr_fw_object *rta_ctl_obj;
+
 	/** @hwrt_dataset: Back pointer to owning HWRT dataset. */
 	struct pvr_hwrt_dataset *hwrt_dataset;
 };
