@@ -49,6 +49,22 @@
 #define DDK19_GPU_UTIL_FWCB_SIZE 10288
 #define DDK19_GPU_UTIL_FWCB_LAST_WORD 10248
 
+#define DDK19_DM_GP 0
+
+#define DDK19_KCCB_CMD_MMUCACHE 102
+#define DDK19_KCCB_CMD_SYNC 107
+#define DDK19_KCCB_CMD_POW 110
+#define DDK19_KCCB_CMD_HEALTH_CHECK 120
+
+#define DDK19_POW_OFF_REQ 1
+#define DDK19_POW_FORCED_IDLE_REQ 2
+#define DDK19_POWER_FORCE_IDLE 1
+
+#define DDK19_POW_STATE_OFF 0
+#define DDK19_POW_STATE_ON 1
+#define DDK19_POW_STATE_FORCED_IDLE 2
+#define DDK19_POW_STATE_IDLE 3
+
 #define DDK19_PDSCODEDATA_BRN_65273_HEAP_BASE 0xA800000000ull
 #define DDK19_USCCODE_BRN_65273_HEAP_BASE 0xBA00000000ull
 #define DDK19_DOPPLER_HEAP_BASE 0xE800000000ull
@@ -211,7 +227,40 @@ struct ddk19_fwif_tracebuf {
 	u32 padding;
 };
 
+struct ddk19_fwif_kccb_cmd {
+	u32 cmd_type;
+	u32 dm;
+	union {
+		struct {
+			u32 sync_fw_addr;
+			u32 update_val;
+		} sync;
+		struct {
+			u32 pow_type;
+			u32 request;
+		} pow;
+		struct {
+			u32 mem_context;
+			u32 flags;
+			u32 sync_fw_addr;
+			u16 sync_update_val;
+		} mmu_cache;
+		u8 raw[136];
+	} data;
+};
+
+struct ddk19_fwif_fwccb_cmd {
+	u32 cmd_type;
+	u32 padding;
+	u8 data[24];
+};
+
 #define DDK19_CHECK(type, member, offset) static_assert(offsetof(type, member) == (offset))
+
+static_assert(sizeof(struct ddk19_fwif_kccb_cmd) == DDK19_KCCB_CMD_SIZE);
+DDK19_CHECK(struct ddk19_fwif_kccb_cmd, data, 8);
+DDK19_CHECK(struct ddk19_fwif_kccb_cmd, data.mmu_cache.sync_update_val, 20);
+static_assert(sizeof(struct ddk19_fwif_fwccb_cmd) == DDK19_FWCCB_CMD_SIZE);
 
 static_assert(sizeof(struct ddk19_fwif_ccb_ctl) == 16);
 static_assert(sizeof(struct ddk19_fwif_os_config) == 12);
