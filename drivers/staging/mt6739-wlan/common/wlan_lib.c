@@ -3291,8 +3291,6 @@ WLAN_STATUS wlanQueryNicCapability(IN P_ADAPTER_T prAdapter)
 	if (prEventNicCapability->ucFeatureSet & (1 << FEATURE_SET_OFFSET_TDLS))
 		prAdapter->fgTdlsIsSup = TRUE;
 	DBGLOG(TDLS, TRACE, "<wifi> support flag: 0x%x\n", prEventNicCapability->ucFeatureSet);
-#else
-	prAdapter->fgTdlsIsSup = 0;
 #endif /* CFG_SUPPORT_TDLS */
 
 	if (!(prEventNicCapability->ucFeatureSet & (1 << FEATURE_SET_OFFSET_5G_SUPPORT)))

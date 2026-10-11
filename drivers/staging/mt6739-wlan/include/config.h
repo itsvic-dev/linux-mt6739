@@ -107,7 +107,7 @@
 #define CFG_SUPPORT_ROAMING_ENC		0	/* enahnced roaming */
 #define CFG_SUPPORT_ROAMING_RETRY	1	/* enahnced roaming */
 
-#define CFG_SUPPORT_TDLS			1	/* IEEE802.11z TDLS */
+#define CFG_SUPPORT_TDLS			0	/* IEEE802.11z TDLS */
 #define CFG_SUPPORT_TDLS_DBG		0	/* TDLS debug */
 #define CFG_SUPPORT_STATISTICS		1
 #define CFG_SUPPORT_DBG_POWERMODE	1	/* for debugging power always active mode */

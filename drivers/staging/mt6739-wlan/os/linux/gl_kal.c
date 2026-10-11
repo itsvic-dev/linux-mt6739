@@ -3505,11 +3505,13 @@ UINT_8 kalGetPktEtherType(IN PUINT_8 pucPkt)
 		ucResult = ENUM_PKT_1X;
 		break;
 	}
+#if (CFG_SUPPORT_TDLS == 1)
 	case TDLS_FRM_PROT_TYPE:
 	{
 		ucResult = ENUM_PKT_TDLS;
 		break;
 	}
+#endif
 	case ETH_WPI_1X:
 	{
 		ucResult = ENUM_PKT_WPI_1X;
