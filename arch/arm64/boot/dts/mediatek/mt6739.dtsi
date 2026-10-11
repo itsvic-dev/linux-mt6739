@@ -193,6 +193,21 @@
 					mediatek,infracfg = <&infracfg_ao>;
 					#power-domain-cells = <0>;
 				};
+
+				power-domain@MT6739_POWER_DOMAIN_MFG0 {
+					reg = <MT6739_POWER_DOMAIN_MFG0>;
+					clocks = <&topckgen CLK_TOP_MFG_SEL>;
+					clock-names = "mfg";
+					mediatek,infracfg = <&infracfg_ao>;
+					#address-cells = <1>;
+					#size-cells = <0>;
+					#power-domain-cells = <0>;
+
+					power-domain@MT6739_POWER_DOMAIN_MFG1 {
+						reg = <MT6739_POWER_DOMAIN_MFG1>;
+						#power-domain-cells = <0>;
+					};
+				};
 			};
 		};
 
@@ -245,6 +260,16 @@
 			interrupts = <GIC_SPI 234 IRQ_TYPE_LEVEL_LOW>;
 			clocks = <&infracfg_ao CLK_INFRA_AP_DMA>;
 			clock-names = "wifi-dma";
+			status = "disabled";
+		};
+
+		gpu: gpu@13000000 {
+			compatible = "mediatek,mt6739-gpu", "img,img-rogue";
+			reg = <0 0x13000000 0 0x80000>;
+			interrupts = <GIC_SPI 226 IRQ_TYPE_LEVEL_LOW>;
+			clocks = <&topckgen CLK_TOP_MFG_SEL>;
+			clock-names = "core";
+			power-domains = <&spm MT6739_POWER_DOMAIN_MFG1>;
 			status = "disabled";
 		};
 
