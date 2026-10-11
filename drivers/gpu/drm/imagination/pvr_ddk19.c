@@ -1007,6 +1007,7 @@ u32 pvr_ddk19_job_cmd(struct pvr_job *job, void *out)
 
 		memset(cmd, 0, sizeof(*cmd));
 		cmd->cdm_ctrl_stream_base = in->regs.cdm_ctrl_stream_base;
+		cmd->pds_ctrl = DDK19_PDS_CTRL_MAX_NUM_CDM_TASKS;
 		cmd->tpu_border_colour_table = in->regs.tpu_border_colour_table;
 		cmd->tpu = in->regs.tpu;
 		cmd->cdm_context_state_base_addr = in->regs.cdm_context_state_base_addr;

@@ -55,6 +55,9 @@
 #define DDK19_GPU_UTIL_FWCB_SIZE 10288
 #define DDK19_GPU_UTIL_FWCB_LAST_WORD 10248
 
+/* The firmware takes only the CDM task limit (bits 24-31) from the compute command. */
+#define DDK19_PDS_CTRL_MAX_NUM_CDM_TASKS (48ull << 24)
+
 #define DDK19_DM_GP 0
 #define DDK19_DM_3D 3
 #define DDK19_DM_CDM 4
