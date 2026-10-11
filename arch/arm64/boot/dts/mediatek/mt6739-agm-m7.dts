@@ -171,3 +171,12 @@
 &watchdog {
 	mediatek,lk-normal-restart;
 };
+
+&u2phy {
+	status = "okay";
+};
+
+&usb {
+	dr_mode = "peripheral";
+	status = "okay";
+};
