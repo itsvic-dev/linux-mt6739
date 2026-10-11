@@ -17,6 +17,7 @@
 
 int kalBoostCpu(P_GLUE_INFO_T prGlueInfo, unsigned int level)
 {
+#if defined(CONFIG_MTK_SPM) && defined(CONFIG_MTK_PPM)
 	unsigned long freq = MAX_CPU_FREQ;
 
 	if (level >= 1)
@@ -27,6 +28,7 @@ int kalBoostCpu(P_GLUE_INFO_T prGlueInfo, unsigned int level)
 	freq = level == 0 ? 0 : freq;
 
 	mt_ppm_sysboost_freq(BOOST_BY_WIFI, freq);
+#endif
 
 	return 0;
 }
