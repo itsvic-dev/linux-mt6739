@@ -227,8 +227,13 @@
 		connsys: connectivity@18070000 {
 			compatible = "mediatek,mt6739-consys";
 			reg = <0 0x18070000 0 0x200>,
-			      <0 0x10007000 0 0x100>;
-			reg-names = "conn", "toprgu";
+			      <0 0x10007000 0 0x100>,
+			      <0 0x1100c000 0 0x1000>;
+			reg-names = "conn", "toprgu", "btif";
+			interrupts = <GIC_SPI 112 IRQ_TYPE_LEVEL_LOW>;
+			interrupt-names = "btif";
+			clocks = <&infracfg_ao CLK_INFRA_BTIF>;
+			clock-names = "btif";
 			power-domains = <&spm MT6739_POWER_DOMAIN_CONN>;
 			mediatek,infracfg = <&infracfg_ao>;
 			status = "disabled";
