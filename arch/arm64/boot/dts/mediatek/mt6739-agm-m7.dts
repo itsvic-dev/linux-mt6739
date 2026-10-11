@@ -311,6 +311,10 @@
 	status = "okay";
 };
 
+&connsys_wifi {
+	status = "okay";
+};
+
 &mt6357_rtc {
 	mode-recovery = <0x10>;
 	mode-bootloader = <0x2000>;
