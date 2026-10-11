@@ -189,3 +189,8 @@ void connectivity_export_show_stack(struct task_struct *tsk, unsigned long *sp)
 void set_logtoomuch_enable(int value)
 {
 }
+
+/* Reported the driver state to the vendor /dev/wmtWifi node. */
+void update_driver_loaded_status(uint8_t loaded)
+{
+}
