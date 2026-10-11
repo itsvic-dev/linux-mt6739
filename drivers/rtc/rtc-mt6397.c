@@ -243,6 +243,20 @@ static const struct rtc_class_ops mtk_rtc_ops = {
 	.set_alarm  = mtk_rtc_set_alarm,
 };
 
+static int mtk_rtc_reboot_mode_write(struct reboot_mode_driver *reboot,
+				    unsigned int magic)
+{
+	struct mt6397_rtc *rtc = container_of(reboot, struct mt6397_rtc, reboot);
+	int ret;
+
+	ret = regmap_update_bits(rtc->regmap, rtc->addr_base + RTC_PDN1,
+				 RTC_PDN1_BOOT_MODE, magic & RTC_PDN1_BOOT_MODE);
+	if (ret)
+		return ret;
+
+	return mtk_rtc_write_trigger(rtc);
+}
+
 static int mtk_rtc_probe(struct platform_device *pdev)
 {
 	struct resource *res;
@@ -292,6 +306,14 @@ static int mtk_rtc_probe(struct platform_device *pdev)
 	rtc->rtc_dev->range_max = mktime64(2027, 12, 31, 23, 59, 59);
 	rtc->rtc_dev->start_secs = mktime64(1968, 1, 2, 0, 0, 0);
 	rtc->rtc_dev->set_start_time = true;
+
+	if (IS_ENABLED(CONFIG_REBOOT_MODE)) {
+		rtc->reboot.dev = &pdev->dev;
+		rtc->reboot.write = mtk_rtc_reboot_mode_write;
+		ret = devm_reboot_mode_register(&pdev->dev, &rtc->reboot);
+		if (ret)
+			return ret;
+	}
 
 	return devm_rtc_register_device(rtc->rtc_dev);
 }

@@ -11,6 +11,7 @@
 
 #include <linux/jiffies.h>
 #include <linux/mutex.h>
+#include <linux/reboot-mode.h>
 #include <linux/regmap.h>
 #include <linux/rtc.h>
 
@@ -57,6 +58,9 @@
 #define RTC_AL_MTH_MASK        0x000f
 #define RTC_AL_YEA_MASK        0x007f
 
+#define RTC_PDN1               0x002c
+#define RTC_PDN1_BOOT_MODE     (BIT(4) | BIT(13))
+
 #define RTC_PDN2               0x002e
 #define RTC_PDN2_PWRON_ALARM   BIT(4)
 
@@ -76,6 +80,7 @@ struct mt6397_rtc {
 	int                     irq;
 	u32                     addr_base;
 	const struct mtk_rtc_data *data;
+	struct reboot_mode_driver reboot;
 };
 
 #endif /* _LINUX_MFD_MT6397_RTC_H_ */
