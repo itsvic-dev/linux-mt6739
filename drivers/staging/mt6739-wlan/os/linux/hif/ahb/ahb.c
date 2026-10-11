@@ -806,6 +806,8 @@ kalDevPortRead(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, OUT 
 		/* only for data port */
 #ifdef MTK_DMA_BUF_MEMCPY_SUP
 		VOID *DmaVBuf = NULL, *DmaPBuf = NULL;
+#else
+		VOID *DmaBuf;
 #endif /* MTK_DMA_BUF_MEMCPY_SUP */
 		GL_HIF_DMA_OPS_T *prDmaOps = HifInfo->DmaOps;
 		MTK_WCN_HIF_DMA_CONF DmaConf;
@@ -847,10 +849,18 @@ kalDevPortRead(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, OUT 
 		 */
 		/* DMA_FROM_DEVICE invalidated (without writeback) the cache */
 		/* TODO: if dst_off was not cacheline aligned */
-		DmaConf.Dst = dma_map_single(HifInfo->Dev, Buf, Size, DMA_FROM_DEVICE);
+		/* Current kernels refuse to map vmalloc memory for DMA. */
+		DmaBuf = is_vmalloc_addr(Buf) ? kmalloc(Size, GFP_ATOMIC) : Buf;
+		if (!DmaBuf)
+			return FALSE;
+		DmaConf.Dst = dma_map_single(HifInfo->Dev, DmaBuf, Size, DMA_FROM_DEVICE);
 		DmaErrorCode = dma_mapping_error(HifInfo->Dev, DmaConf.Dst);
-		if (DmaErrorCode != 0)
-			DBGLOG(RX, INFO, "DMA mapping error: %d\n", DmaErrorCode);
+		if (DmaErrorCode != 0) {
+			DBGLOG(RX, ERROR, "DMA mapping error: %d\n", DmaErrorCode);
+			if (DmaBuf != Buf)
+				kfree(DmaBuf);
+			return FALSE;
+		}
 #endif /* MTK_DMA_BUF_MEMCPY_SUP */
 
 		/* start to read data */
@@ -939,6 +949,10 @@ kalDevPortRead(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, OUT 
 			kalMemCopy(Buf, DmaVBuf, Size);
 #else
 		dma_unmap_single(HifInfo->Dev, DmaConf.Dst, Size, DMA_FROM_DEVICE);
+		if (DmaBuf != Buf) {
+			kalMemCopy(Buf, DmaBuf, Size);
+			kfree(DmaBuf);
+		}
 #endif /* MTK_DMA_BUF_MEMCPY_SUP */
 
 		if ((RegWHLPCR & WHLPCR_INT_EN_SET) == 1)
@@ -1035,6 +1049,8 @@ kalDevPortWrite(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, IN 
 		/* only for data port */
 #ifdef MTK_DMA_BUF_MEMCPY_SUP
 		VOID *DmaVBuf = NULL, *DmaPBuf = NULL;
+#else
+		VOID *DmaBuf;
 #endif /* MTK_DMA_BUF_MEMCPY_SUP */
 		GL_HIF_DMA_OPS_T *prDmaOps = HifInfo->DmaOps;
 		MTK_WCN_HIF_DMA_CONF DmaConf;
@@ -1068,10 +1084,20 @@ kalDevPortWrite(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, IN 
 #else
 
 		/* DMA_TO_DEVICE writeback the cache */
-		DmaConf.Src = dma_map_single(HifInfo->Dev, Buf, Size, DMA_TO_DEVICE);
+		DmaBuf = Buf;
+		if (is_vmalloc_addr(Buf)) {
+			DmaBuf = kmemdup(Buf, Size, GFP_ATOMIC);
+			if (!DmaBuf)
+				return FALSE;
+		}
+		DmaConf.Src = dma_map_single(HifInfo->Dev, DmaBuf, Size, DMA_TO_DEVICE);
 		DmaErrorCode = dma_mapping_error(HifInfo->Dev, DmaConf.Src);
-		if (DmaErrorCode != 0)
-			DBGLOG(TX, INFO, "DMA mapping error: %d\n", DmaErrorCode);
+		if (DmaErrorCode != 0) {
+			DBGLOG(TX, ERROR, "DMA mapping error: %d\n", DmaErrorCode);
+			if (DmaBuf != Buf)
+				kfree(DmaBuf);
+			return FALSE;
+		}
 #endif /* MTK_DMA_BUF_MEMCPY_SUP */
 
 		/* start to write */
@@ -1153,6 +1179,8 @@ kalDevPortWrite(IN P_GLUE_INFO_T GlueInfo, IN UINT_16 Port, IN UINT_32 Size, IN 
 
 #ifndef MTK_DMA_BUF_MEMCPY_SUP
 		dma_unmap_single(HifInfo->Dev, DmaConf.Src, Size, DMA_TO_DEVICE);
+		if (DmaBuf != Buf)
+			kfree(DmaBuf);
 #endif /* MTK_DMA_BUF_MEMCPY_SUP */
 
 		if ((RegWHLPCR & WHLPCR_INT_EN_SET) == 1)
