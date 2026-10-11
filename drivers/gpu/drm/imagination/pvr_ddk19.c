@@ -75,6 +75,7 @@ struct pvr_ddk19 {
 	struct pvr_fw_object *trace_obj;
 	u32 *trace;
 	struct pvr_fw_object *hwrinfobuf_obj;
+	u8 *hwrinfobuf;
 	struct pvr_fw_object *gpu_util_obj;
 	struct pvr_fw_object *runtime_cfg_obj;
 	struct pvr_fw_object *hwperf_ctl_obj;
@@ -532,6 +533,7 @@ static int pvr_ddk19_create_structures(struct pvr_device *pvr_dev)
 			      &init->hwrinfobuf_ctl);
 	if (IS_ERR(ptr))
 		goto err_alloc;
+	ddk19->hwrinfobuf = ptr;
 
 	ptr = pvr_ddk19_alloc(pvr_dev, DDK19_GPU_UTIL_FWCB_SIZE, &ddk19->gpu_util_obj,
 			      &init->gpu_util_fwcb_ctl);
@@ -1065,6 +1067,16 @@ static int pvr_ddk19_state_show(struct seq_file *m, void *data)
 		   READ_ONCE(tb->interrupt_count[0]), READ_ONCE(tb->hwr_counter), ptr);
 	if (ab->path[0] || ab->info[0])
 		seq_printf(m, "assert %.200s:%u: %.200s\n", ab->path, ab->line_num, ab->info);
+	for (u32 i = 0; i < DDK19_HWRINFO_COUNT; i++) {
+		const u8 *e = ddk19->hwrinfobuf + i * DDK19_HWRINFO_SIZE;
+		const u64 *data = (const u64 *)e;
+
+		if (!*(const u32 *)(e + 52))
+			continue;
+		seq_printf(m, "hwr %u: type %u dm %u event 0x%08x flags 0x%08x data %016llx %016llx %016llx\n",
+			   *(const u32 *)(e + 52), *(const u32 *)(e + 64), *(const u32 *)(e + 68),
+			   *(const u32 *)(e + 56), *(const u32 *)(e + 60), data[0], data[1], data[2]);
+	}
 	for (u32 i = 0; i < DDK19_TRACE_BUFFER_SIZE; i++)
 		seq_printf(m, "%08x%c", READ_ONCE(ddk19->trace[i]), (i % 8 == 7) ? '\n' : ' ');
 
@@ -1089,12 +1101,54 @@ static int pvr_ddk19_sync_set(void *data, u64 val)
 }
 DEFINE_DEBUGFS_ATTRIBUTE(pvr_ddk19_sync_fops, NULL, pvr_ddk19_sync_set, "%llu\n");
 
+static int pvr_ddk19_nmi_show(struct seq_file *m, void *data)
+{
+	static const char * const names[] = { "ErrorEPC", "Status", "Cause", "BadVAddr", "EPC",
+					      "SP", "Debug", "DEPC", "BadInstr" };
+	struct pvr_device *pvr_dev = m->private;
+	struct pvr_fw_object *data_obj = pvr_dev->fw_dev.mem.data_obj;
+	const struct pvr_fw_layout_entry *boot_data;
+	u32 *nmi, v;
+	u8 *map;
+	int err;
+
+	boot_data = pvr_fw_find_layout_entry(pvr_dev, MIPS_BOOT_DATA);
+	map = pvr_fw_object_vmap(data_obj);
+	if (IS_ERR(map))
+		return PTR_ERR(map);
+	nmi = (u32 *)(map + boot_data->alloc_offset + ROGUE_MIPSFW_NMI_SHARED_DATA_BASE);
+
+	WRITE_ONCE(nmi[ROGUE_MIPSFW_NMI_SYNC_FLAG_OFFSET], 0);
+	pvr_cr_write64(pvr_dev, ROGUE_CR_MIPS_WRAPPER_NMI_ENABLE,
+		       ROGUE_CR_MIPS_WRAPPER_NMI_ENABLE_EVENT_EN);
+	pvr_cr_write32(pvr_dev, ROGUE_CR_MIPS_WRAPPER_NMI_EVENT,
+		       ROGUE_CR_MIPS_WRAPPER_NMI_EVENT_TRIGGER_EN);
+	err = read_poll_timeout(pvr_cr_read32, v, v & ROGUE_CR_MIPS_EXCEPTION_STATUS_SI_NMI_TAKEN_EN,
+				100, 100000, false, pvr_dev, ROGUE_CR_MIPS_EXCEPTION_STATUS);
+	seq_printf(m, "exception_status 0x%08x%s\n", v, err ? " (NMI not taken)" : "");
+	if (!err) {
+		WRITE_ONCE(nmi[ROGUE_MIPSFW_NMI_SYNC_FLAG_OFFSET], 1);
+		err = read_poll_timeout(pvr_cr_read32, v,
+					!(v & ROGUE_CR_MIPS_EXCEPTION_STATUS_SI_ERL_EN), 100, 100000,
+					false, pvr_dev, ROGUE_CR_MIPS_EXCEPTION_STATUS);
+		for (int i = 0; i < ARRAY_SIZE(names); i++)
+			seq_printf(m, "%s 0x%08x\n", names[i],
+				   READ_ONCE(nmi[ROGUE_MIPSFW_NMI_STATE_OFFSET + i]));
+	}
+	pvr_cr_write32(pvr_dev, ROGUE_CR_MIPS_WRAPPER_NMI_ENABLE, 0);
+	pvr_fw_object_vunmap(data_obj);
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(pvr_ddk19_nmi);
+
 void pvr_ddk19_debugfs_init(struct pvr_device *pvr_dev, struct dentry *root)
 {
 	struct dentry *dir = debugfs_create_dir("ddk19", root);
 
 	debugfs_create_file("state", 0400, dir, pvr_dev, &pvr_ddk19_state_fops);
 	debugfs_create_file("sync", 0200, dir, pvr_dev, &pvr_ddk19_sync_fops);
+	debugfs_create_file("nmi", 0400, dir, pvr_dev, &pvr_ddk19_nmi_fops);
 }
 
 bool pvr_ddk19_va_reserved(struct pvr_device *pvr_dev, u64 device_addr, u64 size)
