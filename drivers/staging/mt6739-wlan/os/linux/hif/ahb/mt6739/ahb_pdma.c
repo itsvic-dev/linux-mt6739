@@ -160,6 +160,7 @@ GL_HIF_DMA_OPS_T HifPdmaOps = {
 ********************************************************************************
 */
 
+#ifdef CONFIG_MTK_EMI_MPU
 int HifAhbSetMpuProtect(bool enable)
 {
 	emi_mpu_set_region_protection(
@@ -170,6 +171,7 @@ int HifAhbSetMpuProtect(bool enable)
 				     enable ? FORBIDDEN : NO_PROTECTION));
 	return 0;
 }
+#endif
 
 /*----------------------------------------------------------------------------*/
 /*!
@@ -198,10 +200,12 @@ VOID HifPdmaInit(GL_HIF_INFO_T *HifInfo)
 	else
 		PDMA_DBG("PDMA> Initialize DMA mask fail!\n");
 
+#ifdef CONFIG_MTK_EMI_MPU
 	/* MPU Setting */
 	/* WIFI using TOP 512KB */
 	DBGLOG(INIT, INFO, "[wlan] MPU region 21, 0x%08x - 0x%08x\n", (UINT_32) gConEmiPhyBase,
 	       (UINT_32) (gConEmiPhyBase + 512 * 1024));
+#endif
 
 	HifAhbSetMpuProtect(true);
 
