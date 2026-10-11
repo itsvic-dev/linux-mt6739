@@ -59,6 +59,7 @@ struct mt6739_consys {
 	struct regulator *vcn18;
 	struct regulator *vcn28;
 	struct regulator *vcn33_bt;
+	struct regulator *vcn33_wifi;
 	struct regmap *infracfg;
 	phys_addr_t emi_base;
 	void __iomem *btif;
@@ -135,12 +136,15 @@ static int mt6739_consys_power_on(struct mt6739_consys *cs)
 	ret = regulator_enable(cs->vcn28);
 	if (ret)
 		goto err_vcn33;
+	ret = regulator_enable(cs->vcn33_wifi);
+	if (ret)
+		goto err_vcn28;
 
 	mt6739_consys_cpu_reset(cs, true);
 
 	ret = pm_runtime_resume_and_get(cs->dev);
 	if (ret)
-		goto err_vcn28;
+		goto err_vcn33_wifi;
 
 	udelay(10);
 	for (i = 0; i < 10; i++) {
@@ -170,6 +174,8 @@ static int mt6739_consys_power_on(struct mt6739_consys *cs)
 err_pm:
 	mt6739_consys_cpu_reset(cs, true);
 	pm_runtime_put_sync(cs->dev);
+err_vcn33_wifi:
+	regulator_disable(cs->vcn33_wifi);
 err_vcn28:
 	regulator_disable(cs->vcn28);
 err_vcn33:
@@ -185,6 +191,7 @@ static void mt6739_consys_power_off(struct mt6739_consys *cs)
 	clk_disable_unprepare(cs->btif_clk);
 	mt6739_consys_cpu_reset(cs, true);
 	pm_runtime_put_sync(cs->dev);
+	regulator_disable(cs->vcn33_wifi);
 	regulator_disable(cs->vcn28);
 	regulator_disable(cs->vcn33_bt);
 	regulator_disable(cs->vcn18);
@@ -316,6 +323,9 @@ static int mt6739_consys_probe(struct platform_device *pdev)
 	cs->vcn33_bt = devm_regulator_get(dev, "vcn33-bt");
 	if (IS_ERR(cs->vcn33_bt))
 		return PTR_ERR(cs->vcn33_bt);
+	cs->vcn33_wifi = devm_regulator_get(dev, "vcn33-wifi");
+	if (IS_ERR(cs->vcn33_wifi))
+		return PTR_ERR(cs->vcn33_wifi);
 
 	cs->infracfg = syscon_regmap_lookup_by_phandle(dev->of_node, "mediatek,infracfg");
 	if (IS_ERR(cs->infracfg))

@@ -307,6 +307,7 @@
 	vcn18-supply = <&mt6357_vcn18_reg>;
 	vcn28-supply = <&mt6357_vcn28_reg>;
 	vcn33-bt-supply = <&mt6357_vcn33_bt_reg>;
+	vcn33-wifi-supply = <&mt6357_vcn33_wifi_reg>;
 	status = "okay";
 };
 
