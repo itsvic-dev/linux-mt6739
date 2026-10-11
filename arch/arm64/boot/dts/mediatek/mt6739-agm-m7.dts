@@ -275,6 +275,11 @@
 	};
 };
 
+&mt6357_rtc {
+	mode-recovery = <0x10>;
+	mode-bootloader = <0x2000>;
+};
+
 &mt6357_pmic {
 	interrupts-extended = <&pinctrl 182 IRQ_TYPE_LEVEL_HIGH>;
 	interrupt-controller;
