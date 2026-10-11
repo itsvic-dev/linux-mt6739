@@ -185,6 +185,12 @@
 	};
 };
 
+&display {
+	width-mm = <37>;
+	height-mm = <49>;
+	status = "okay";
+};
+
 &keyboard {
 	keypad,num-rows = <8>;
 	keypad,num-columns = <9>;

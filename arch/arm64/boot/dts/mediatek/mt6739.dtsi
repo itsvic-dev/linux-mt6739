@@ -177,6 +177,15 @@
 			reset-names = "pwrap";
 		};
 
+		display: display@1400a000 {
+			compatible = "mediatek,mt6739-dbi-display";
+			reg = <0 0x1400a000 0 0x1000>,
+			      <0 0x14001000 0 0x1000>,
+			      <0 0x14013000 0 0x1000>;
+			reg-names = "ovl", "mutex", "dbi";
+			status = "disabled";
+		};
+
 		keyboard: keyboard@10010000 {
 			compatible = "mediatek,mt6739-keypad",
 				     "mediatek,mt6779-keypad";
