@@ -1171,11 +1171,15 @@ kalIndicateStatusAndComplete(IN P_GLUE_INFO_T prGlueInfo, IN WLAN_STATUS eStatus
 
 			/* CFG80211 Indication */
 			if (eStatus == WLAN_STATUS_ROAM_OUT_FIND_BEST) {
-				cfg80211_roamed_bss(prGlueInfo->prDevHandler,
-						    bss,
-						    prGlueInfo->aucReqIe,
-						    prGlueInfo->u4ReqIeLength,
-						    prGlueInfo->aucRspIe, prGlueInfo->u4RspIeLength, GFP_KERNEL);
+				struct cfg80211_roam_info rRoamInfo = {
+					.links[0].bss = bss,
+					.req_ie = prGlueInfo->aucReqIe,
+					.req_ie_len = prGlueInfo->u4ReqIeLength,
+					.resp_ie = prGlueInfo->aucRspIe,
+					.resp_ie_len = prGlueInfo->u4RspIeLength,
+				};
+
+				cfg80211_roamed(prGlueInfo->prDevHandler, &rRoamInfo, GFP_KERNEL);
 			} else {
 				/*
 				 * to support user space roaming, cfg80211 will change the sme_state to connecting
@@ -4293,7 +4297,7 @@ VOID kalSchedScanResults(IN P_GLUE_INFO_T prGlueInfo)
 {
 	ASSERT(prGlueInfo);
 
-	cfg80211_sched_scan_results(priv_to_wiphy(prGlueInfo));
+	cfg80211_sched_scan_results(priv_to_wiphy(prGlueInfo), 0);
 
 }
 

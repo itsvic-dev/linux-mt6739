@@ -1201,8 +1201,8 @@ static void createWirelessDevice(void)
 	prWiphy->cipher_suites = mtk_cipher_suites;
 	prWiphy->n_cipher_suites = ARRAY_SIZE(mtk_cipher_suites);
 	prWiphy->flags = WIPHY_FLAG_SUPPORTS_FW_ROAM
-			| WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL
-			| WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
+			| WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL;
+	prWiphy->max_sched_scan_reqs = 1;
 	prWiphy->regulatory_flags = REGULATORY_CUSTOM_REG;
 #if CFG_SUPPORT_TDLS
 	TDLSEX_WIPHY_FLAGS_INIT(prWiphy->flags);
@@ -1428,7 +1428,7 @@ VOID wlanSchedScanStoppedWorkQueue(struct work_struct *work)
 
 	/* 2. indication to cfg80211 */
 	/* 20150205 change cfg80211_sched_scan_stopped to work queue due to sched_scan_mtx dead lock issue */
-	cfg80211_sched_scan_stopped(priv_to_wiphy(prGlueInfo));
+	cfg80211_sched_scan_stopped(priv_to_wiphy(prGlueInfo), 0);
 	DBGLOG(SCN, INFO,
 		"cfg80211_sched_scan_stopped event send done\n");
 
