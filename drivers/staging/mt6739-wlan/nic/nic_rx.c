@@ -2997,8 +2997,8 @@ nicRxWaitResponse(IN P_ADAPTER_T prAdapter,
 			    RX_RESPONSE_TIMEOUT) {
 				DBGLOG(RX, ERROR,
 				       "RX_RESPONSE_TIMEOUT %u %u %lld %lld\n",
-				       u4PktLen, i, rStartTime.tv64,
-				       rCurTime.tv64);
+				       u4PktLen, i, ktime_to_ns(rStartTime),
+				       ktime_to_ns(rCurTime));
 				return WLAN_STATUS_FAILURE;
 			}
 

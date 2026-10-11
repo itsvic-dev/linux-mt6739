@@ -1338,7 +1338,7 @@ VOID wlanFillTimestamp(P_ADAPTER_T prAdapter, PVOID pvPacket, UINT_8 ucPhase)
 	PUINT_8 pucEth = NULL;
 	UINT_32 u4Length = 0;
 	PUINT_8 pucUdp = NULL;
-	struct timeval tval;
+	struct timespec64 tval;
 
 	if (!prAdapter || !prAdapter->rDebugInfo.fgVoE5_7Test || !skb)
 		return;
@@ -1352,7 +1352,7 @@ VOID wlanFillTimestamp(P_ADAPTER_T prAdapter, PVOID pvPacket, UINT_8 ucPhase)
 	pucUdp = &pucEth[ETH_HLEN+28];
 	if (kalStrnCmp(pucUdp, "1345678", 7))
 		return;
-	do_gettimeofday(&tval);
+	ktime_get_real_ts64(&tval);
 	switch (ucPhase) {
 	case PHASE_XMIT_RCV: /* xmit */
 		pucUdp += 20;
@@ -1365,7 +1365,7 @@ VOID wlanFillTimestamp(P_ADAPTER_T prAdapter, PVOID pvPacket, UINT_8 ucPhase)
 		break;
 	}
 	wlanSetBE32(tval.tv_sec, pucUdp);
-	wlanSetBE32(tval.tv_usec, pucUdp+4);
+	wlanSetBE32(tval.tv_nsec / NSEC_PER_USEC, pucUdp+4);
 }
 /* End: Functions used to breakdown packet jitter, for test case VoE 5.7 */
 VOID wlanDebugCommandRecodTime(P_CMD_INFO_T prCmdInfo)
