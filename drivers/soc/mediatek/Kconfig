@@ -45,6 +45,14 @@ config MTK_INFRACFG
 	  INFRACFG controller contains various infrastructure registers not
 	  directly associated to any device.
 
+config MTK_MT6739_CONSYS
+	tristate "MediaTek MT6739 connectivity power control"
+	depends on ARCH_MEDIATEK || COMPILE_TEST
+	depends on PM
+	help
+	  Power control for the MT6739 connectivity subsystem (Wi-Fi,
+	  Bluetooth, GPS and FM).
+
 config MTK_PMIC_WRAP
 	tristate "MediaTek PMIC Wrapper Support"
 	depends on RESET_CONTROLLER
