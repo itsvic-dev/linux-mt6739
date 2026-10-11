@@ -5,6 +5,8 @@
 #include <linux/moduleparam.h>
 #include <linux/mutex.h>
 #include <linux/sched/debug.h>
+#include <linux/soc/mediatek/mt6739-consys.h>
+#include <linux/workqueue.h>
 #include "wmt_shim.h"
 #include "precomp.h"
 
@@ -13,17 +15,33 @@ static MTK_WCN_WMT_WLAN_CB_INFO wmt_shim_cb;
 static bool wmt_shim_registered;
 static bool wmt_shim_probed;
 
+static bool autostart = true;
+module_param(autostart, bool, 0444);
+MODULE_PARM_DESC(autostart, "Power on CONSYS and probe Wi-Fi when the module loads");
+
+static void wmt_shim_autostart(struct work_struct *work)
+{
+	int ret = wmt_shim_wlan_probe();
+
+	if (ret)
+		pr_err("Wi-Fi start failed: %d\n", ret);
+}
+static DECLARE_WORK(wmt_shim_autostart_work, wmt_shim_autostart);
+
 INT32 mtk_wcn_wmt_wlan_reg(P_MTK_WCN_WMT_WLAN_CB_INFO pWmtWlanCbInfo)
 {
 	mutex_lock(&wmt_shim_lock);
 	wmt_shim_cb = *pWmtWlanCbInfo;
 	wmt_shim_registered = true;
 	mutex_unlock(&wmt_shim_lock);
+	if (autostart)
+		schedule_work(&wmt_shim_autostart_work);
 	return 0;
 }
 
 INT32 mtk_wcn_wmt_wlan_unreg(VOID)
 {
+	cancel_work_sync(&wmt_shim_autostart_work);
 	mutex_lock(&wmt_shim_lock);
 	wmt_shim_registered = false;
 	memset(&wmt_shim_cb, 0, sizeof(wmt_shim_cb));
@@ -39,7 +57,12 @@ int wmt_shim_wlan_probe(void)
 	if (wmt_shim_probed) {
 		ret = 0;
 	} else if (wmt_shim_registered && wmt_shim_cb.wlan_probe_cb) {
-		ret = wmt_shim_cb.wlan_probe_cb();
+		ret = mt6739_consys_get();
+		if (!ret) {
+			ret = wmt_shim_cb.wlan_probe_cb();
+			if (ret)
+				mt6739_consys_put();
+		}
 		wmt_shim_probed = (ret == 0);
 	}
 	mutex_unlock(&wmt_shim_lock);
@@ -54,6 +77,7 @@ int wmt_shim_wlan_remove(void)
 	if (wmt_shim_probed && wmt_shim_cb.wlan_remove_cb) {
 		ret = wmt_shim_cb.wlan_remove_cb();
 		wmt_shim_probed = false;
+		mt6739_consys_put();
 	}
 	mutex_unlock(&wmt_shim_lock);
 	return ret;
@@ -81,7 +105,7 @@ static const struct kernel_param_ops wmt_shim_wlan_on_ops = {
 	.get = wmt_shim_wlan_on_get,
 };
 module_param_cb(wlan_on, &wmt_shim_wlan_on_ops, NULL, 0644);
-MODULE_PARM_DESC(wlan_on, "Write 1 to probe Wi-Fi after CONSYS bring-up, 0 to remove");
+MODULE_PARM_DESC(wlan_on, "Write 1 to power on CONSYS and probe Wi-Fi, 0 to remove");
 
 INT32 mtk_wcn_wmt_msgcb_reg(ENUM_WMTDRV_TYPE_T eType, PF_WMT_CB pCb)
 {
