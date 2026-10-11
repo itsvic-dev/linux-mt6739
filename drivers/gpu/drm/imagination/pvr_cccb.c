@@ -239,7 +239,7 @@ pvr_cccb_send_kccb_kick(struct pvr_device *pvr_dev,
 	};
 
 	if (pvr_cccb->ddk19) {
-		pvr_ddk19_kick(pvr_dev, pvr_cccb->dm, cctx_fw_addr, pvr_cccb->write_offset);
+		WARN_ON(pvr_ddk19_kick(pvr_dev, pvr_cccb->dm, cctx_fw_addr, pvr_cccb->write_offset));
 		return;
 	}
 

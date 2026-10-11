@@ -679,7 +679,7 @@ static bool pvr_ddk19_kccb_is_idle(struct pvr_device *pvr_dev)
 	return READ_ONCE(ctl->read_offset) == READ_ONCE(ctl->write_offset);
 }
 
-int pvr_ddk19_sync(struct pvr_device *pvr_dev)
+static int pvr_ddk19_sync_powered(struct pvr_device *pvr_dev)
 {
 	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
 	struct ddk19_fwif_kccb_cmd cmd = {
@@ -702,7 +702,7 @@ int pvr_ddk19_sync(struct pvr_device *pvr_dev)
 	return pvr_ddk19_poll(&ddk19->sync[DDK19_SYNC_KCCB], 1, 1000000);
 }
 
-int pvr_ddk19_mmu_flush(struct pvr_device *pvr_dev, u32 flags)
+static int pvr_ddk19_mmu_flush_powered(struct pvr_device *pvr_dev, u32 flags)
 {
 	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
 	struct ddk19_fwif_kccb_cmd cmd = {
@@ -726,8 +726,8 @@ int pvr_ddk19_mmu_flush(struct pvr_device *pvr_dev, u32 flags)
 			      1000000);
 }
 
-int pvr_ddk19_cleanup(struct pvr_device *pvr_dev, u32 type, struct pvr_fw_object *fw_obj,
-		      u32 offset)
+static int pvr_ddk19_cleanup_powered(struct pvr_device *pvr_dev, u32 type,
+				     struct pvr_fw_object *fw_obj, u32 offset)
 {
 	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
 	struct ddk19_fwif_kccb_cmd cmd = {
@@ -768,6 +768,43 @@ int pvr_ddk19_cleanup(struct pvr_device *pvr_dev, u32 type, struct pvr_fw_object
 		return err;
 
 	return (v & DDK19_CLEANUP_BUSY) ? -EBUSY : 0;
+}
+
+int pvr_ddk19_sync(struct pvr_device *pvr_dev)
+{
+	int err = pvr_power_get(pvr_dev);
+
+	if (err)
+		return err;
+	err = pvr_ddk19_sync_powered(pvr_dev);
+	pvr_power_put(pvr_dev);
+
+	return err;
+}
+
+int pvr_ddk19_mmu_flush(struct pvr_device *pvr_dev, u32 flags)
+{
+	int err = pvr_power_get(pvr_dev);
+
+	if (err)
+		return err;
+	err = pvr_ddk19_mmu_flush_powered(pvr_dev, flags);
+	pvr_power_put(pvr_dev);
+
+	return err;
+}
+
+int pvr_ddk19_cleanup(struct pvr_device *pvr_dev, u32 type, struct pvr_fw_object *fw_obj,
+		      u32 offset)
+{
+	int err = pvr_power_get(pvr_dev);
+
+	if (err)
+		return err;
+	err = pvr_ddk19_cleanup_powered(pvr_dev, type, fw_obj, offset);
+	pvr_power_put(pvr_dev);
+
+	return err;
 }
 
 int pvr_ddk19_kick(struct pvr_device *pvr_dev, u32 dm, u32 ctx_fw_addr, u32 write_offset)
