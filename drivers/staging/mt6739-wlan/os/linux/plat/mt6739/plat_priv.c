@@ -11,7 +11,7 @@
 
 #include "gl_typedef.h"
 #include "typedef.h"
-#include "connectivity_build_in_adapter.h"
+#include "wmt_shim.h"
 
 #define MAX_CPU_FREQ     23400000
 

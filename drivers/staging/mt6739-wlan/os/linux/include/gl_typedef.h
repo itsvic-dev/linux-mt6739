@@ -12,7 +12,7 @@
 #ifndef _GL_TYPEDEF_H
 #define _GL_TYPEDEF_H
 #include "linux/version.h"
-#include "osal_typedef.h"
+#include "wmt_shim.h"
 
 #if (KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE)
 #define IEEE80211_BAND_2GHZ NL80211_BAND_2GHZ

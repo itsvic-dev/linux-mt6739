@@ -47,6 +47,7 @@ mt6739-wlan-y := \
 	os/linux/hif/ahb/ahb.o \
 	os/linux/hif/ahb/mt6739/ahb_pdma.o \
 	os/linux/plat/mt6739/plat_priv.o \
+	os/linux/shim/wmt_shim.o \
 	mgmt/ais_fsm.o \
 	mgmt/aaa_fsm.o \
 	mgmt/assoc.o \

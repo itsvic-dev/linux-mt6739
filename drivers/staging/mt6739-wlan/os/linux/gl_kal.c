@@ -34,7 +34,7 @@
 #include <mt_sleep.h>
 #endif
 #endif
-#include "connectivity_build_in_adapter.h"
+#include "wmt_shim.h"
 
 /*******************************************************************************
 *                              C O N S T A N T S
