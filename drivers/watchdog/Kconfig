@@ -914,6 +914,15 @@ config MESON_WATCHDOG
 	  To compile this driver as a module, choose M here: the
 	  module will be called meson_wdt.
 
+config MEDIATEK_WATCHDOG_EARLY
+	bool "Arm the MediaTek watchdog from early boot (debug)"
+	depends on ARCH_MEDIATEK || COMPILE_TEST
+	help
+	  Arm the TOPRGU watchdog with DDR reserve mode from an early
+	  parameter, and never ping it. A hung kernel then resets with
+	  DRAM intact, so the log survives in pstore.
+	  Use with "mtk_wdt_early=<phys addr>,<timeout in seconds>".
+
 config MEDIATEK_WATCHDOG
 	tristate "Mediatek SoCs watchdog support"
 	depends on ARCH_MEDIATEK || COMPILE_TEST
