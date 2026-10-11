@@ -5,6 +5,7 @@
 #include <linux/moduleparam.h>
 #include <linux/mutex.h>
 #include "wmt_shim.h"
+#include "precomp.h"
 
 static DEFINE_MUTEX(wmt_shim_lock);
 static MTK_WCN_WMT_WLAN_CB_INFO wmt_shim_cb;
@@ -162,6 +163,17 @@ INT32 wmt_set_jtag_for_mcu(VOID)
 }
 
 INT32 wmt_set_jtag_for_gps(VOID)
+{
+	return 0;
+}
+
+/* Called around a whole-chip reset; nothing sends WMTMSG_TYPE_RESET yet. */
+int wifi_reset_start(void)
+{
+	return 0;
+}
+
+int wifi_reset_end(ENUM_RESET_STATUS_T status)
 {
 	return 0;
 }
