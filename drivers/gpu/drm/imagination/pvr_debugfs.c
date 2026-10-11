@@ -3,6 +3,7 @@
 
 #include "pvr_debugfs.h"
 
+#include "pvr_ddk19.h"
 #include "pvr_device.h"
 #include "pvr_fw_trace.h"
 
@@ -27,8 +28,10 @@ pvr_debugfs_init(struct drm_minor *minor)
 	struct pvr_device *pvr_dev = to_pvr_device(drm_dev);
 	struct dentry *root = minor->debugfs_root;
 
-	if (pvr_dev->device_data->ddk19)
+	if (pvr_dev->device_data->ddk19) {
+		pvr_ddk19_debugfs_init(pvr_dev, root);
 		return;
+	}
 
 	for (size_t i = 0; i < ARRAY_SIZE(pvr_debugfs_entries); ++i) {
 		const struct pvr_debugfs_entry *entry = &pvr_debugfs_entries[i];

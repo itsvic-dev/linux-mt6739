@@ -5,6 +5,7 @@
 
 #include <linux/types.h>
 
+struct dentry;
 struct pvr_device;
 struct pvr_power_sequence_ops;
 
@@ -20,5 +21,6 @@ bool pvr_ddk19_is_idle(struct pvr_device *pvr_dev);
 void pvr_ddk19_process_irq(struct pvr_device *pvr_dev);
 int pvr_ddk19_sync(struct pvr_device *pvr_dev);
 int pvr_ddk19_mmu_flush(struct pvr_device *pvr_dev, u32 flags);
+void pvr_ddk19_debugfs_init(struct pvr_device *pvr_dev, struct dentry *root);
 
 #endif /* PVR_DDK19_H */

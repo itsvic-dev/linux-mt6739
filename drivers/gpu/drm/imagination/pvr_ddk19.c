@@ -18,12 +18,14 @@
 #include <drm/drm_print.h>
 #include <linux/delay.h>
 #include <linux/cleanup.h>
+#include <linux/debugfs.h>
 #include <linux/dma-mapping.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/ktime.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
+#include <linux/seq_file.h>
 #include <linux/slab.h>
 
 #define DDK19_CORE_CLOCK_SPEED 570000000
@@ -804,6 +806,54 @@ void pvr_ddk19_fw_fini(struct pvr_device *pvr_dev)
 	pvr_fw_cleanup(pvr_dev);
 	drm_mm_takedown(&fw_dev->fw_mm);
 	fw_dev->defs->fini(pvr_dev);
+}
+
+static int pvr_ddk19_state_show(struct seq_file *m, void *data)
+{
+	struct pvr_device *pvr_dev = m->private;
+	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
+	struct ddk19_fwif_tracebuf *tb = ddk19->tracebuf;
+	struct ddk19_fwif_assertbuf *ab = &tb->trace_buf[0].assert_buf;
+	u32 ptr = READ_ONCE(tb->trace_buf[0].trace_pointer);
+
+	seq_printf(m, "pow_state %u\nkccb %u/%u\nfwccb %u/%u\nkccb_cmds_executed %u\n",
+		   READ_ONCE(tb->pow_state), READ_ONCE(ddk19->kccb_ctl->read_offset),
+		   READ_ONCE(ddk19->kccb_ctl->write_offset), READ_ONCE(ddk19->fwccb_ctl->read_offset),
+		   READ_ONCE(ddk19->fwccb_ctl->write_offset), READ_ONCE(tb->kccb_cmds_executed));
+	seq_printf(m, "interrupts %u\nhwr_counter %u\ntrace_pointer %u\n",
+		   READ_ONCE(tb->interrupt_count[0]), READ_ONCE(tb->hwr_counter), ptr);
+	if (ab->path[0] || ab->info[0])
+		seq_printf(m, "assert %.200s:%u: %.200s\n", ab->path, ab->line_num, ab->info);
+	for (u32 i = 0; i < DDK19_TRACE_BUFFER_SIZE; i++)
+		seq_printf(m, "%08x%c", READ_ONCE(ddk19->trace[i]), (i % 8 == 7) ? '\n' : ' ');
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(pvr_ddk19_state);
+
+static int pvr_ddk19_sync_set(void *data, u64 val)
+{
+	struct pvr_device *pvr_dev = data;
+	struct device *dev = from_pvr_device(pvr_dev)->dev;
+	int err;
+
+	err = pm_runtime_resume_and_get(dev);
+	if (err)
+		return err;
+
+	err = pvr_ddk19_sync(pvr_dev);
+	pm_runtime_put_autosuspend(dev);
+
+	return err;
+}
+DEFINE_DEBUGFS_ATTRIBUTE(pvr_ddk19_sync_fops, NULL, pvr_ddk19_sync_set, "%llu\n");
+
+void pvr_ddk19_debugfs_init(struct pvr_device *pvr_dev, struct dentry *root)
+{
+	struct dentry *dir = debugfs_create_dir("ddk19", root);
+
+	debugfs_create_file("state", 0400, dir, pvr_dev, &pvr_ddk19_state_fops);
+	debugfs_create_file("sync", 0200, dir, pvr_dev, &pvr_ddk19_sync_fops);
 }
 
 int pvr_ddk19_fw_init(struct pvr_device *pvr_dev)
