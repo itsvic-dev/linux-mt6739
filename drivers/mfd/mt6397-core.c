@@ -114,7 +114,7 @@ static const struct resource mt6357_keys_resources[] = {
 };
 
 static const struct resource mt6357_charger_resources[] = {
-	DEFINE_RES_IRQ_NAMED(MT6357_IRQ_CHRDET, "chrdet"),
+	DEFINE_RES_IRQ_NAMED(MT6357_IRQ_CHRDET_EDGE, "chrdet"),
 };
 
 static const struct resource mt6331_keys_resources[] = {
