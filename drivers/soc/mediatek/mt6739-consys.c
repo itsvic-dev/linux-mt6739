@@ -1,16 +1,28 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* MT6739 connectivity subsystem (CONSYS) power control. */
 
+#include <linux/bitfield.h>
 #include <linux/delay.h>
 #include <linux/io.h>
+#include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
+#include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
+#include <linux/sizes.h>
 
 #define CONSYS_HW_ID		0x008
 #define CONSYS_HW_ID_MT6739	0x699
+#define CONSYS_ACR		0x110
+#define CONSYS_ACR_MBIST	BIT(18)
+#define CONSYS_CPUPCR		0x160
+
+#define INFRA_CONN_EMI_REMAP		0x380
+#define INFRA_CONN_EMI_REMAP_EN		BIT(13)
+#define INFRA_CONN_EMI_REMAP_BASE	GENMASK(12, 0)
 
 #define TOPRGU_SWSYSRST		0x018
 #define TOPRGU_KEY		0x88000000
@@ -23,6 +35,8 @@ struct mt6739_consys {
 	struct regulator *vcn18;
 	struct regulator *vcn28;
 	struct regulator *vcn33_bt;
+	struct regmap *infracfg;
+	phys_addr_t emi_base;
 };
 
 static void mt6739_consys_cpu_reset(struct mt6739_consys *cs, bool assert)
@@ -66,7 +80,18 @@ static int mt6739_consys_power_on(struct mt6739_consys *cs)
 		msleep(20);
 	}
 	dev_info(cs->dev, "hardware ID 0x%x after %d polls\n", id, i);
-	return id == CONSYS_HW_ID_MT6739 ? 0 : -ENODEV;
+	if (id != CONSYS_HW_ID_MT6739)
+		return -ENODEV;
+
+	writel(readl(cs->base + CONSYS_ACR) | CONSYS_ACR_MBIST, cs->base + CONSYS_ACR);
+	mt6739_consys_cpu_reset(cs, false);
+	msleep(20);
+
+	for (i = 0; i < 5; i++) {
+		dev_info(cs->dev, "CPU PC 0x%08x\n", readl(cs->base + CONSYS_CPUPCR));
+		usleep_range(1000, 2000);
+	}
+	return 0;
 
 err_vcn28:
 	regulator_disable(cs->vcn28);
@@ -90,7 +115,7 @@ static int mt6739_consys_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct mt6739_consys *cs;
-	struct resource *res;
+	struct resource *res, mem;
 	int ret;
 
 	cs = devm_kzalloc(dev, sizeof(*cs), GFP_KERNEL);
@@ -119,6 +144,22 @@ static int mt6739_consys_probe(struct platform_device *pdev)
 	cs->vcn33_bt = devm_regulator_get(dev, "vcn33-bt");
 	if (IS_ERR(cs->vcn33_bt))
 		return PTR_ERR(cs->vcn33_bt);
+
+	cs->infracfg = syscon_regmap_lookup_by_phandle(dev->of_node, "mediatek,infracfg");
+	if (IS_ERR(cs->infracfg))
+		return dev_err_probe(dev, PTR_ERR(cs->infracfg), "no infracfg\n");
+
+	ret = of_reserved_mem_region_to_resource(dev->of_node, 0, &mem);
+	if (ret)
+		return dev_err_probe(dev, ret, "no shared memory\n");
+	if (resource_size(&mem) != SZ_2M || !IS_ALIGNED(mem.start, SZ_2M))
+		return dev_err_probe(dev, -EINVAL, "shared memory must be 2 MiB, 2 MiB aligned\n");
+	cs->emi_base = mem.start;
+	regmap_update_bits(cs->infracfg, INFRA_CONN_EMI_REMAP,
+			   INFRA_CONN_EMI_REMAP_EN | INFRA_CONN_EMI_REMAP_BASE,
+			   INFRA_CONN_EMI_REMAP_EN |
+			   FIELD_PREP(INFRA_CONN_EMI_REMAP_BASE, cs->emi_base >> 21));
+	dev_info(dev, "shared memory at %pa\n", &cs->emi_base);
 
 	ret = devm_pm_runtime_enable(dev);
 	if (ret)
