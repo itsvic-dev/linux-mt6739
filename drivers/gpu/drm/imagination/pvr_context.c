@@ -95,7 +95,10 @@ static int init_render_fw_objs(struct pvr_context *ctx,
 	if (!args->static_context_state_len)
 		return -EINVAL;
 
-	static_rendercontext_state = &fw_render_context->static_render_context_state;
+	if (ctx->pvr_dev->device_data->ddk19)
+		static_rendercontext_state = fw_ctx_map + pvr_ddk19_static_state_offset(ctx->type);
+	else
+		static_rendercontext_state = &fw_render_context->static_render_context_state;
 
 	/* Copy static render context state from userspace. */
 	return process_static_context_state(ctx->pvr_dev,

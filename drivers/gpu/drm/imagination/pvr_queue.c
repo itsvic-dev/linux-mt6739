@@ -1114,6 +1114,7 @@ static void init_fw_context(struct pvr_queue *queue, void *fw_ctx_map)
 		pvr_fw_object_get_fw_addr(queue->reg_state_obj, &state_fw_addr);
 		pvr_ddk19_init_common_context(fw_ctx_map + queue->ctx_offset, cccb->ctrl_fw_addr,
 					      cccb->cccb_fw_addr, mem_ctx_fw_addr, state_fw_addr,
+					      state_fw_addr + pvr_ddk19_rf_cmd_offset(queue->type),
 					      ctx->priority, ctx->ctx_id, get_dm_type(queue));
 		return;
 	}
@@ -1355,7 +1356,8 @@ struct pvr_queue *pvr_queue_create(struct pvr_context *ctx,
 		return ERR_PTR(-ENOMEM);
 
 	queue->type = type;
-	queue->ctx_offset = pvr_dev->device_data->ddk19 ? 0 : get_ctx_offset(type);
+	queue->ctx_offset = pvr_dev->device_data->ddk19 ? pvr_ddk19_ctx_offset(type) :
+							   get_ctx_offset(type);
 	queue->ctx = ctx;
 	queue->callstack_addr = args->callstack_addr;
 	sched = &queue->scheduler;

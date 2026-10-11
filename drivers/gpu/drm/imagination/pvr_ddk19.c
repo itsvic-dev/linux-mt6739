@@ -859,30 +859,64 @@ void pvr_ddk19_cccb_write(struct pvr_cccb *cccb, u32 cmd_type, u32 cmd_size, voi
 	cccb->write_offset = (cccb->write_offset + size) & cccb->wrap_mask;
 }
 
-u32 pvr_ddk19_fw_ctx_size(enum drm_pvr_ctx_type type)
+u32 pvr_ddk19_static_state_offset(enum drm_pvr_ctx_type type)
 {
 	switch (type) {
-	case DRM_PVR_CTX_TYPE_COMPUTE:
-		return sizeof(struct ddk19_fwif_fwcommoncontext) +
-		       sizeof(struct rogue_fwif_static_computecontext_state);
+	case DRM_PVR_CTX_TYPE_RENDER:
+		return 2 * sizeof(struct ddk19_fwif_fwcommoncontext) + 8;
 	default:
-		return 0;
+		return sizeof(struct ddk19_fwif_fwcommoncontext);
 	}
 }
 
-u32 pvr_ddk19_static_state_offset(enum drm_pvr_ctx_type type)
+u32 pvr_ddk19_fw_ctx_size(enum drm_pvr_ctx_type type)
 {
-	return sizeof(struct ddk19_fwif_fwcommoncontext);
+	switch (type) {
+	case DRM_PVR_CTX_TYPE_RENDER:
+		return pvr_ddk19_static_state_offset(type) +
+		       sizeof(struct rogue_fwif_static_rendercontext_state);
+	case DRM_PVR_CTX_TYPE_COMPUTE:
+		return pvr_ddk19_static_state_offset(type) +
+		       sizeof(struct rogue_fwif_static_computecontext_state);
+	case DRM_PVR_CTX_TYPE_TRANSFER_FRAG:
+		return sizeof(struct ddk19_fwif_fwcommoncontext);
+	}
+
+	return 0;
 }
 
+u32 pvr_ddk19_ctx_offset(enum drm_pvr_job_type type)
+{
+	return type == DRM_PVR_JOB_TYPE_FRAGMENT ? sizeof(struct ddk19_fwif_fwcommoncontext) : 0;
+}
+
+static u32 pvr_ddk19_ctx_state_only_size(enum drm_pvr_job_type type)
+{
+	switch (type) {
+	case DRM_PVR_JOB_TYPE_GEOMETRY:
+		return DDK19_TACTX_STATE_SIZE;
+	case DRM_PVR_JOB_TYPE_FRAGMENT:
+	case DRM_PVR_JOB_TYPE_TRANSFER_FRAG:
+		return DDK19_3DCTX_STATE_SIZE;
+	default:
+		return DDK19_CTX_STATE_SIZE;
+	}
+}
+
+/* The RF command follows the context state in the same object. */
 u32 pvr_ddk19_ctx_state_size(enum drm_pvr_job_type type)
 {
-	return DDK19_CTX_STATE_SIZE + DDK19_RF_CMD_SIZE;
+	return pvr_ddk19_ctx_state_only_size(type) + DDK19_RF_CMD_SIZE;
+}
+
+u32 pvr_ddk19_rf_cmd_offset(enum drm_pvr_job_type type)
+{
+	return pvr_ddk19_ctx_state_only_size(type);
 }
 
 void pvr_ddk19_init_common_context(void *dst, u32 ccbctl_fw_addr, u32 ccb_fw_addr,
-				   u32 fw_mem_ctx_fw_addr, u32 ctx_state_fw_addr, u32 priority,
-				   u32 ctx_id, u32 dm)
+				   u32 fw_mem_ctx_fw_addr, u32 ctx_state_fw_addr,
+				   u32 rf_cmd_fw_addr, u32 priority, u32 ctx_id, u32 dm)
 {
 	struct ddk19_fwif_fwcommoncontext *cctx = dst;
 
@@ -890,7 +924,7 @@ void pvr_ddk19_init_common_context(void *dst, u32 ccbctl_fw_addr, u32 ccb_fw_add
 	cctx->ccb_fw_addr = ccb_fw_addr;
 	cctx->fw_mem_context_fw_addr = fw_mem_ctx_fw_addr;
 	cctx->context_state_fw_addr = ctx_state_fw_addr;
-	cctx->rf_cmd_fw_addr = ctx_state_fw_addr + DDK19_CTX_STATE_SIZE;
+	cctx->rf_cmd_fw_addr = rf_cmd_fw_addr;
 	cctx->priority = priority;
 	cctx->server_common_context_id = ctx_id;
 	cctx->pid = task_tgid_nr(current);

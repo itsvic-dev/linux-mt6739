@@ -37,10 +37,12 @@ void pvr_ddk19_cccb_write(struct pvr_cccb *cccb, u32 cmd_type, u32 cmd_size, voi
 			  u32 ext_job_ref, u32 int_job_ref);
 u32 pvr_ddk19_fw_ctx_size(enum drm_pvr_ctx_type type);
 u32 pvr_ddk19_static_state_offset(enum drm_pvr_ctx_type type);
+u32 pvr_ddk19_ctx_offset(enum drm_pvr_job_type type);
 u32 pvr_ddk19_ctx_state_size(enum drm_pvr_job_type type);
+u32 pvr_ddk19_rf_cmd_offset(enum drm_pvr_job_type type);
 void pvr_ddk19_init_common_context(void *dst, u32 ccbctl_fw_addr, u32 ccb_fw_addr,
-				   u32 fw_mem_ctx_fw_addr, u32 ctx_state_fw_addr, u32 priority,
-				   u32 ctx_id, u32 dm);
+				   u32 fw_mem_ctx_fw_addr, u32 ctx_state_fw_addr,
+				   u32 rf_cmd_fw_addr, u32 priority, u32 ctx_id, u32 dm);
 void pvr_ddk19_free_list_init(void *dst, u64 dev_addr, u32 max_pages, u32 current_pages,
 			      u32 grow_pages, u32 ready_pages, u32 id);
 u32 pvr_ddk19_job_cmd_len(struct pvr_job *job);
