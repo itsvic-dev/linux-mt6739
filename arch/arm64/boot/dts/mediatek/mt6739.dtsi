@@ -230,6 +230,7 @@
 			      <0 0x10007000 0 0x100>;
 			reg-names = "conn", "toprgu";
 			power-domains = <&spm MT6739_POWER_DOMAIN_CONN>;
+			mediatek,infracfg = <&infracfg_ao>;
 			status = "disabled";
 		};
 
