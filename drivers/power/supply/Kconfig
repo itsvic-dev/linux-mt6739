@@ -705,6 +705,13 @@ config CHARGER_MP2629
 	  Battery charger. This driver provides Battery charger power management
 	  functions on the systems.
 
+config CHARGER_HL7005
+	tristate "Halo HL7005 charger"
+	depends on I2C
+	select REGMAP_I2C
+	help
+	  Say Y here to enable the Halo HL7005 switching charger.
+
 config CHARGER_MT6357
 	tristate "MediaTek MT6357 charger detection"
 	depends on MFD_MT6397
