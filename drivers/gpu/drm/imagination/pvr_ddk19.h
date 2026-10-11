@@ -18,6 +18,7 @@ struct pvr_vm_context;
 struct pvr_power_sequence_ops;
 
 extern const struct pvr_power_sequence_ops pvr_power_sequence_ops_ddk19;
+extern const struct drm_pvr_heap pvr_ddk19_heaps[DRM_PVR_HEAP_COUNT];
 
 char *pvr_ddk19_firmware_filename(struct pvr_device *pvr_dev);
 void pvr_ddk19_init_device_info(struct pvr_device *pvr_dev);

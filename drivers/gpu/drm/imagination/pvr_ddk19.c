@@ -11,6 +11,7 @@
 #include "pvr_fw_startstop.h"
 #include "pvr_gem.h"
 #include "pvr_job.h"
+#include "pvr_mmu.h"
 #include "pvr_power.h"
 #include "pvr_rogue_cr_defs.h"
 #include "pvr_rogue_fwif.h"
@@ -1239,6 +1240,40 @@ void pvr_ddk19_debugfs_init(struct pvr_device *pvr_dev, struct dentry *root)
 	debugfs_create_file("sync", 0200, dir, pvr_dev, &pvr_ddk19_sync_fops);
 	debugfs_create_file("nmi", 0400, dir, pvr_dev, &pvr_ddk19_nmi_fops);
 }
+
+/* BRN 65273 needs the code, visibility test and transfer heaps in one 1 GiB PC entry each. */
+const struct drm_pvr_heap pvr_ddk19_heaps[DRM_PVR_HEAP_COUNT] = {
+	[DRM_PVR_HEAP_GENERAL] = {
+		.base = 0x65C0000000ull,
+		.size = SZ_2G,
+		.page_size_log2 = PVR_DEVICE_PAGE_SHIFT,
+	},
+	[DRM_PVR_HEAP_PDS_CODE_DATA] = {
+		.base = DDK19_PDSCODEDATA_BRN_65273_HEAP_BASE,
+		.size = SZ_1G,
+		.page_size_log2 = PVR_DEVICE_PAGE_SHIFT,
+	},
+	[DRM_PVR_HEAP_USC_CODE] = {
+		.base = DDK19_USCCODE_BRN_65273_HEAP_BASE,
+		.size = SZ_1G,
+		.page_size_log2 = PVR_DEVICE_PAGE_SHIFT,
+	},
+	[DRM_PVR_HEAP_RGNHDR] = {
+		.base = 0xDBF0000000ull,
+		.page_size_log2 = PVR_DEVICE_PAGE_SHIFT,
+	},
+	[DRM_PVR_HEAP_VIS_TEST] = {
+		.base = 0xE400000000ull,
+		.size = SZ_1M,
+		.page_size_log2 = PVR_DEVICE_PAGE_SHIFT,
+	},
+	/* 1.9 starts this heap at 0, which Mesa treats as an invalid address. */
+	[DRM_PVR_HEAP_TRANSFER_FRAG] = {
+		.base = SZ_2M,
+		.size = SZ_1G - SZ_2M,
+		.page_size_log2 = PVR_DEVICE_PAGE_SHIFT,
+	},
+};
 
 bool pvr_ddk19_va_reserved(struct pvr_device *pvr_dev, u64 device_addr, u64 size)
 {

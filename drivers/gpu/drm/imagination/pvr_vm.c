@@ -1036,10 +1036,17 @@ copy_out:
 	return 0;
 }
 
+static const struct drm_pvr_heap *
+pvr_get_heaps(const struct pvr_device *pvr_dev)
+{
+	return pvr_dev->device_data->ddk19 ? pvr_ddk19_heaps : pvr_heaps;
+}
+
 int
 pvr_heap_info_get(const struct pvr_device *pvr_dev,
 		  struct drm_pvr_ioctl_dev_query_args *args)
 {
+	const struct drm_pvr_heap *heaps = pvr_get_heaps(pvr_dev);
 	struct drm_pvr_dev_query_heap_info query = {0};
 	u64 dest;
 	int err;
@@ -1065,7 +1072,7 @@ pvr_heap_info_get(const struct pvr_device *pvr_dev,
 	/* Region header heap is only present if BRN63142 is present. */
 	dest = query.heaps.array;
 	for (size_t i = 0; i < query.heaps.count; i++) {
-		struct drm_pvr_heap heap = pvr_heaps[i];
+		struct drm_pvr_heap heap = heaps[i];
 
 		if (i == DRM_PVR_HEAP_RGNHDR && !PVR_HAS_QUIRK(pvr_dev, 63142))
 			heap.size = 0;
@@ -1119,6 +1126,7 @@ pvr_heap_contains_range(const struct drm_pvr_heap *pvr_heap, u64 start, u64 end)
 const struct drm_pvr_heap *
 pvr_find_heap_containing(struct pvr_device *pvr_dev, u64 start, u64 size)
 {
+	const struct drm_pvr_heap *heaps = pvr_get_heaps(pvr_dev);
 	u64 end;
 
 	if (check_add_overflow(start, size - 1, &end))
@@ -1136,8 +1144,8 @@ pvr_find_heap_containing(struct pvr_device *pvr_dev, u64 start, u64 size)
 			continue;
 		}
 
-		if (pvr_heap_contains_range(&pvr_heaps[heap_id], start, end))
-			return &pvr_heaps[heap_id];
+		if (pvr_heap_contains_range(&heaps[heap_id], start, end))
+			return &heaps[heap_id];
 	}
 
 	return NULL;
