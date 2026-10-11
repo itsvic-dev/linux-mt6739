@@ -56,6 +56,7 @@ static const struct scpsys_domain_data scpsys_domain_data_mt6739[] = {
 		.pwr_sta2nd_offs = MT6739_SPM_PWR_STATUS_2ND,
 		.sram_pdn_bits = BIT(5),
 		.sram_pdn_ack_bits = BIT(6),
+		.caps = MTK_SCPD_KEEP_DEFAULT_OFF,
 	},
 };
 
