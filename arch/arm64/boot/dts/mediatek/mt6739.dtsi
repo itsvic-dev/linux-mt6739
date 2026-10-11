@@ -184,9 +184,10 @@
 			status = "disabled";
 		};
 
-		u2phy: t-phy {
+		u2phy: t-phy@11cc0e00 {
 			compatible = "mediatek,mt6739-tphy",
 				     "mediatek,generic-tphy-v1";
+			reg = <0 0x11cc0e00 0 0x200>;
 			#address-cells = <1>;
 			#size-cells = <1>;
 			ranges = <0 0 0x11cc0000 0x1000>;
