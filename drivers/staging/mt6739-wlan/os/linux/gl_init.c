@@ -298,7 +298,7 @@ static struct cfg80211_ops mtk_wlan_ops = {
 	.update_ft_ies = mtk_cfg80211_update_ft_ies,
 };
 
-
+#if CFG_SUPPORT_VENDOR_CMD
 static const struct wiphy_vendor_command mtk_wlan_vendor_ops[] = {
 	{
 		{
@@ -541,6 +541,7 @@ static const struct nl80211_vendor_cmd_info mtk_wlan_vendor_events[] = {
 		.subcmd = WIFI_EVENT_RSSI_MONITOR
 	},
 };
+#endif
 
 /* There isn't a lot of sense in it, but you can transmit anything you like */
 static const struct ieee80211_txrx_stypes
@@ -1091,6 +1092,7 @@ int wlanDoIOCTL(struct net_device *prDev, struct ifreq *prIfReq, int i4Cmd)
 		return -EINVAL;
 	}
 
+#if CFG_SUPPORT_WEXT
 	if ((i4Cmd >= SIOCIWFIRST) && (i4Cmd < SIOCIWFIRSTPRIV)) {
 		/* 0x8B00 ~ 0x8BDF, wireless extension region */
 		ret = wext_support_ioctl(prDev, prIfReq, i4Cmd);
@@ -1099,7 +1101,9 @@ int wlanDoIOCTL(struct net_device *prDev, struct ifreq *prIfReq, int i4Cmd)
 		ret = priv_support_ioctl(prDev, prIfReq, i4Cmd);
 	} else if (i4Cmd == SIOCDEVPRIVATE + 1) {
 		ret = priv_support_driver_cmd(prDev, prIfReq, i4Cmd);
-	} else {
+	} else
+#endif
+	{
 		DBGLOG(INIT, WARN, "Unexpected ioctl command: 0x%04x\n", i4Cmd);
 		ret = -EOPNOTSUPP;
 	}
@@ -1205,16 +1209,18 @@ static void createWirelessDevice(void)
 #endif /* CFG_SUPPORT_TDLS */
 	prWiphy->max_remain_on_channel_duration = 500;
 	prWiphy->mgmt_stypes = mtk_cfg80211_ais_default_mgmt_stypes;
+#if CFG_SUPPORT_VENDOR_CMD
 	prWiphy->vendor_commands = mtk_wlan_vendor_ops;
 	prWiphy->n_vendor_commands = sizeof(mtk_wlan_vendor_ops) / sizeof(struct wiphy_vendor_command);
 	prWiphy->vendor_events = mtk_wlan_vendor_events;
 	prWiphy->n_vendor_events = ARRAY_SIZE(mtk_wlan_vendor_events);
+#endif
 
 	/* <1.4> wowlan support */
 #ifdef CONFIG_PM
 	prWiphy->wowlan = &mtk_wlan_wowlan_support;
 #endif
-#ifdef CONFIG_CFG80211_WEXT
+#if defined(CONFIG_CFG80211_WEXT) && CFG_SUPPORT_WEXT
 	 /* <1.5> Use wireless extension to replace IOCTL */
 	prWiphy->wext = &wext_handler_def;
 #endif
@@ -1237,7 +1243,7 @@ static void createWirelessDevice(void)
 	*((P_GLUE_INFO_T *) netdev_priv(prNetDev)) = (P_GLUE_INFO_T) wiphy_priv(prWiphy);
 
 	prNetDev->netdev_ops = &wlan_netdev_ops;
-#ifdef CONFIG_WIRELESS_EXT
+#if defined(CONFIG_WIRELESS_EXT) && CFG_SUPPORT_WEXT
 	prNetDev->wireless_handlers = &wext_handler_def;
 #endif
 	netif_carrier_off(prNetDev);
@@ -2041,7 +2047,7 @@ static struct wireless_dev *wlanNetCreate(PVOID pvData)
 	*((P_GLUE_INFO_T *) netdev_priv(prGlueInfo->prDevHandler)) = prGlueInfo;
 
 	prGlueInfo->prDevHandler->netdev_ops = &wlan_netdev_ops;
-#ifdef CONFIG_WIRELESS_EXT
+#if defined(CONFIG_WIRELESS_EXT) && CFG_SUPPORT_WEXT
 	prGlueInfo->prDevHandler->wireless_handlers = &wext_handler_def;
 #endif
 	netif_carrier_off(prGlueInfo->prDevHandler);

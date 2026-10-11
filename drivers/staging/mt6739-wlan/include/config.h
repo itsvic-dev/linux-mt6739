@@ -762,6 +762,9 @@
 
 #define CFG_STRICT_CHECK_CAPINFO_PRIVACY    0
 
+#define CFG_SUPPORT_WEXT                    0	/* wireless extensions and private ioctls */
+#define CFG_SUPPORT_VENDOR_CMD              0	/* Android nl80211 vendor commands and events */
+
 #define CFG_SUPPORT_WFD                     1
 
 #define CFG_SUPPORT_WFD_COMPOSE_IE          1

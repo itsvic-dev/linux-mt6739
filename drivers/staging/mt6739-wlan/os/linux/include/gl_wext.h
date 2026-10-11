@@ -247,7 +247,9 @@ enum {
 *                            P U B L I C   D A T A
 ********************************************************************************
 */
+#if CFG_SUPPORT_WEXT
 extern const struct iw_handler_def wext_handler_def;
+#endif
 
 /*******************************************************************************
 *                           P R I V A T E   D A T A
@@ -263,6 +265,7 @@ extern const struct iw_handler_def wext_handler_def;
 *                  F U N C T I O N   D E C L A R A T I O N S
 ********************************************************************************
 */
+#if CFG_SUPPORT_WEXT
 /* wireless extensions' ioctls */
 int wext_support_ioctl(IN struct net_device *prDev, IN struct ifreq *prIfReq, IN int i4Cmd);
 
@@ -275,6 +278,13 @@ wext_indicate_wext_event(IN P_GLUE_INFO_T prGlueInfo,
 			 IN unsigned int u4Cmd, IN unsigned char *pucData, IN unsigned int u4DataLen);
 
 struct iw_statistics *wext_get_wireless_stats(struct net_device *prDev);
+#else
+static inline void
+wext_indicate_wext_event(IN P_GLUE_INFO_T prGlueInfo,
+			 IN unsigned int u4Cmd, IN unsigned char *pucData, IN unsigned int u4DataLen)
+{
+}
+#endif
 
 BOOLEAN
 wextSrchDesiredWPAIE(IN PUINT_8 pucIEStart,

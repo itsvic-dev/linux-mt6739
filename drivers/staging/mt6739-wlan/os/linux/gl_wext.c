@@ -36,6 +36,7 @@
 /* compatibility to wireless extensions */
 #ifdef WIRELESS_EXT
 
+#if CFG_SUPPORT_WEXT
 /*******************************************************************************
 *                              C O N S T A N T S
 ********************************************************************************
@@ -174,6 +175,7 @@ const struct iw_handler_def wext_handler_def = {
 	.private_args = rIwPrivTable,
 	.get_wireless_stats = wext_get_wireless_stats,
 };
+#endif
 
 /*******************************************************************************
  *                           P R I V A T E   D A T A
@@ -735,6 +737,8 @@ wextSrchDesiredWPSIE(IN PUINT_8 pucIEStart,
 	return FALSE;
 }				/* parseSearchDesiredWPSIE */
 #endif
+
+#if CFG_SUPPORT_WEXT
 
 /*----------------------------------------------------------------------------*/
 /*!
@@ -3990,6 +3994,7 @@ struct iw_statistics *wext_get_wireless_stats(struct net_device *prDev)
 stat_out:
 	return pStats;
 }				/* wlan_get_wireless_stats */
+#endif
 
 
 #endif /* WIRELESS_EXT */
