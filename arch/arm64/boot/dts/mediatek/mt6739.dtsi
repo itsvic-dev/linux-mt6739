@@ -6,6 +6,7 @@
 #include <dt-bindings/phy/phy.h>
 #include <dt-bindings/pinctrl/mt6739-pinfunc.h>
 #include <dt-bindings/reset/mediatek,mt6739-resets.h>
+#include <dt-bindings/power/mediatek,mt6739-power-controller.h>
 
 / {
 	compatible = "mediatek,mt6739";
@@ -175,6 +176,24 @@
 			clock-names = "spi", "wrap";
 			resets = <&infracfg_ao MT6739_INFRACFG_AO_PMIC_WRAP_SW_RST>;
 			reset-names = "pwrap";
+		};
+
+		scpsys: syscon@10006000 {
+			compatible = "mediatek,mt6739-scpsys", "syscon", "simple-mfd";
+			reg = <0 0x10006000 0 0x1000>;
+
+			spm: power-controller {
+				compatible = "mediatek,mt6739-power-controller";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#power-domain-cells = <1>;
+
+				power-domain@MT6739_POWER_DOMAIN_CONN {
+					reg = <MT6739_POWER_DOMAIN_CONN>;
+					mediatek,infracfg = <&infracfg_ao>;
+					#power-domain-cells = <0>;
+				};
+			};
 		};
 
 		ap_i2c0: i2c@11007000 {
