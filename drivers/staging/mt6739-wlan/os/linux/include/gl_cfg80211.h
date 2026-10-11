@@ -188,39 +188,39 @@ typedef enum _ENUM_TESTMODE_LINK_DETECTION_ATTR {
 /* cfg80211 hooks */
 int
 mtk_cfg80211_change_iface(struct wiphy *wiphy,
-			  struct net_device *ndev, enum nl80211_iftype type, u32 *flags, struct vif_params *params);
+			  struct net_device *ndev, enum nl80211_iftype type, struct vif_params *params);
 
 int
 mtk_cfg80211_add_key(struct wiphy *wiphy,
-		     struct net_device *ndev,
-		     u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params);
+		     struct wireless_dev *wdev,
+		     int link_id, u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params);
 
 int
 mtk_cfg80211_get_key(struct wiphy *wiphy,
-		     struct net_device *ndev,
-		     u8 key_index,
+		     struct wireless_dev *wdev,
+		     int link_id, u8 key_index,
 		     bool pairwise,
 		     const u8 *mac_addr, void *cookie, void (*callback) (void *cookie, struct key_params *)
 );
 
 int
-mtk_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev, u8 key_index, bool pairwise, const u8 *mac_addr);
+mtk_cfg80211_del_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr);
 
 int
-mtk_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *ndev, u8 key_index, bool unicast, bool multicast);
+mtk_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *ndev, int link_id, u8 key_index, bool unicast, bool multicast);
 
-int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *netdev, u8 key_index);
+int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index);
 
-int mtk_cfg80211_get_station(struct wiphy *wiphy, struct net_device *ndev, const u8 *mac, struct station_info *sinfo);
+int mtk_cfg80211_get_station(struct wiphy *wiphy, struct wireless_dev *wdev, const u8 *mac, struct station_info *sinfo);
 
-int mtk_cfg80211_add_station(struct wiphy *wiphy, struct net_device *ndev,
+int mtk_cfg80211_add_station(struct wiphy *wiphy, struct wireless_dev *wdev,
 				const u8 *mac, struct station_parameters *params);
 
-int mtk_cfg80211_change_station(struct wiphy *wiphy, struct net_device *ndev,
+int mtk_cfg80211_change_station(struct wiphy *wiphy, struct wireless_dev *wdev,
 				const u8 *mac, struct station_parameters *params);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
-int mtk_cfg80211_del_station(struct wiphy *wiphy, struct net_device *ndev, struct station_del_parameters *params);
+int mtk_cfg80211_del_station(struct wiphy *wiphy, struct wireless_dev *wdev, struct station_del_parameters *params);
 #else
 int mtk_cfg80211_del_station(struct wiphy *wiphy, struct net_device *ndev, const u8 *mac);
 #endif
@@ -248,7 +248,7 @@ int mtk_cfg80211_flush_pmksa(struct wiphy *wiphy, struct net_device *ndev);
 int mtk_cfg80211_remain_on_channel(struct wiphy *wiphy,
 				   struct wireless_dev *wdev,
 				   struct ieee80211_channel *chan,
-				   unsigned int duration, u64 *cookie);
+				   unsigned int duration, u64 *cookie, const u8 *rx_addr);
 
 int mtk_cfg80211_cancel_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev, u64 cookie);
 
@@ -262,6 +262,10 @@ void mtk_cfg80211_mgmt_frame_register(IN struct wiphy *wiphy,
 				      IN struct wireless_dev *wdev,
 				      IN u16 frame_type, IN bool reg);
 
+void mtk_cfg80211_update_mgmt_frame_registrations(struct wiphy *wiphy,
+						  struct wireless_dev *wdev,
+						  struct mgmt_frame_regs *upd);
+
 int mtk_cfg80211_mgmt_tx_cancel_wait(struct wiphy *wiphy, struct wireless_dev *wdev, u64 cookie);
 
 int mtk_cfg80211_assoc(struct wiphy *wiphy, struct net_device *ndev, struct cfg80211_assoc_request *req);
@@ -270,7 +274,7 @@ int
 mtk_cfg80211_sched_scan_start(IN struct wiphy *wiphy,
 			      IN struct net_device *ndev, IN struct cfg80211_sched_scan_request *request);
 
-int mtk_cfg80211_sched_scan_stop(IN struct wiphy *wiphy, IN struct net_device *ndev);
+int mtk_cfg80211_sched_scan_stop(IN struct wiphy *wiphy, IN struct net_device *ndev, IN u64 reqid);
 
 #if CONFIG_NL80211_TESTMODE
 int

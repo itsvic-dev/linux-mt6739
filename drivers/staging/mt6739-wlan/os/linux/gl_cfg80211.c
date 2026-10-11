@@ -86,7 +86,7 @@ static UINT_8 gucKeyIndex = 255;
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_change_iface(struct wiphy *wiphy,
-			  struct net_device *ndev, enum nl80211_iftype type, u32 *flags, struct vif_params *params)
+			  struct net_device *ndev, enum nl80211_iftype type, struct vif_params *params)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 	WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
@@ -137,8 +137,8 @@ mtk_cfg80211_change_iface(struct wiphy *wiphy,
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_add_key(struct wiphy *wiphy,
-		     struct net_device *ndev,
-		     u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params)
+		     struct wireless_dev *wdev,
+		     int link_id, u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params)
 {
 	PARAM_KEY_T rKey;
 	P_GLUE_INFO_T prGlueInfo = NULL;
@@ -218,8 +218,8 @@ mtk_cfg80211_add_key(struct wiphy *wiphy,
 /*----------------------------------------------------------------------------*/
 int
 mtk_cfg80211_get_key(struct wiphy *wiphy,
-		     struct net_device *ndev,
-		     u8 key_index,
+		     struct wireless_dev *wdev,
+		     int link_id, u8 key_index,
 		     bool pairwise,
 		     const u8 *mac_addr, void *cookie, void (*callback) (void *cookie, struct key_params *))
 {
@@ -245,7 +245,7 @@ mtk_cfg80211_get_key(struct wiphy *wiphy,
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev, u8 key_index, bool pairwise, const u8 *mac_addr)
+int mtk_cfg80211_del_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 	WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
@@ -298,7 +298,7 @@ int mtk_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev, u8 key_in
  */
 /*----------------------------------------------------------------------------*/
 int
-mtk_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *ndev, u8 key_index, bool unicast, bool multicast)
+mtk_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *ndev, int link_id, u8 key_index, bool unicast, bool multicast)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 
@@ -322,7 +322,7 @@ mtk_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *ndev, u8 ke
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *netdev, u8 key_index)
+int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index)
 {
 	return 0;
 }
@@ -337,7 +337,7 @@ int mtk_cfg80211_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *ne
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_get_station(struct wiphy *wiphy, struct net_device *ndev, const u8 *mac, struct station_info *sinfo)
+int mtk_cfg80211_get_station(struct wiphy *wiphy, struct wireless_dev *wdev, const u8 *mac, struct station_info *sinfo)
 {
 #define LINKSPEED_MAX_RANGE_11BGN 3000
 	P_GLUE_INFO_T prGlueInfo = NULL;
@@ -562,9 +562,10 @@ put_cache_info:
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_change_station(struct wiphy *wiphy, struct net_device *ndev,
+int mtk_cfg80211_change_station(struct wiphy *wiphy, struct wireless_dev *wdev,
 				const u8 *mac, struct station_parameters *params)
 {
+	struct net_device *ndev = wdev->netdev;
 #if (CFG_SUPPORT_TDLS == 1)
 	/*
 	 * EX: In supplicant,
@@ -685,9 +686,10 @@ int mtk_cfg80211_change_station(struct wiphy *wiphy, struct net_device *ndev,
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_add_station(struct wiphy *wiphy, struct net_device *ndev,
+int mtk_cfg80211_add_station(struct wiphy *wiphy, struct wireless_dev *wdev,
 				const u8 *mac, struct station_parameters *params)
 {
+	struct net_device *ndev = wdev->netdev;
 #if (CFG_SUPPORT_TDLS == 1)
 	/* from supplicant -- wpa_supplicant_tdls_peer_addset() */
 	P_GLUE_INFO_T prGlueInfo;
@@ -793,7 +795,7 @@ int mtk_cfg80211_add_station(struct wiphy *wiphy, struct net_device *ndev,
  */
 /*----------------------------------------------------------------------------*/
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
-int mtk_cfg80211_del_station(struct wiphy *wiphy, struct net_device *ndev, struct station_del_parameters *params)
+int mtk_cfg80211_del_station(struct wiphy *wiphy, struct wireless_dev *wdev, struct station_del_parameters *params)
 #else
 int mtk_cfg80211_del_station(struct wiphy *wiphy, struct net_device *ndev, const u8 *mac)
 #endif
@@ -1756,6 +1758,16 @@ void mtk_cfg80211_mgmt_frame_register(IN struct wiphy *wiphy,
 
 }				/* mtk_cfg80211_mgmt_frame_register */
 
+void mtk_cfg80211_update_mgmt_frame_registrations(struct wiphy *wiphy,
+						  struct wireless_dev *wdev,
+						  struct mgmt_frame_regs *upd)
+{
+	mtk_cfg80211_mgmt_frame_register(wiphy, wdev, MAC_FRAME_PROBE_REQ,
+					 upd->interface_stypes & BIT(IEEE80211_STYPE_PROBE_REQ >> 4));
+	mtk_cfg80211_mgmt_frame_register(wiphy, wdev, MAC_FRAME_ACTION,
+					 upd->interface_stypes & BIT(IEEE80211_STYPE_ACTION >> 4));
+}
+
 /*----------------------------------------------------------------------------*/
 /*!
  * @brief This routine is responsible for requesting to stay on a
@@ -1770,7 +1782,7 @@ void mtk_cfg80211_mgmt_frame_register(IN struct wiphy *wiphy,
 int mtk_cfg80211_remain_on_channel(struct wiphy *wiphy,
 				   struct wireless_dev *wdev,
 				   struct ieee80211_channel *chan,
-				   unsigned int duration, u64 *cookie)
+				   unsigned int duration, u64 *cookie, const u8 *rx_addr)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 	INT_32 i4Rslt = -EINVAL;
@@ -2115,7 +2127,7 @@ mtk_cfg80211_sched_scan_start(IN struct wiphy *wiphy,
 	return 0;
 }
 
-int mtk_cfg80211_sched_scan_stop(IN struct wiphy *wiphy, IN struct net_device *ndev)
+int mtk_cfg80211_sched_scan_stop(IN struct wiphy *wiphy, IN struct net_device *ndev, IN u64 reqid)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 	WLAN_STATUS rStatus;
