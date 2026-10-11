@@ -705,6 +705,13 @@ config CHARGER_MP2629
 	  Battery charger. This driver provides Battery charger power management
 	  functions on the systems.
 
+config CHARGER_MT6357
+	tristate "MediaTek MT6357 charger detection"
+	depends on MFD_MT6397
+	help
+	  Say Y here to report whether a charger is connected to the
+	  MediaTek MT6357 PMIC.
+
 config CHARGER_MT6360
 	tristate "Mediatek MT6360 Charger Driver"
 	depends on MFD_MT6360
