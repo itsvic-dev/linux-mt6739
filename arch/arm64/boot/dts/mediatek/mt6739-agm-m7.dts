@@ -168,8 +168,48 @@
 	};
 };
 
-&watchdog {
-	mediatek,lk-normal-restart;
+&mmc0 {
+	pinctrl-names = "default", "state_uhs";
+	pinctrl-0 = <&mmc0_pins>;
+	pinctrl-1 = <&mmc0_pins>;
+	bus-width = <8>;
+	max-frequency = <52000000>;
+	cap-mmc-highspeed;
+	non-removable;
+	no-sd;
+	no-sdio;
+	status = "okay";
+};
+
+&pinctrl {
+	mmc0_pins: mmc0-pins {
+		pins-cmd-dat {
+			pinmux = <PINMUX_GPIO38__FUNC_MSDC0_CMD>,
+				 <PINMUX_GPIO41__FUNC_MSDC0_DAT0>,
+				 <PINMUX_GPIO42__FUNC_MSDC0_DAT1>,
+				 <PINMUX_GPIO43__FUNC_MSDC0_DAT2>,
+				 <PINMUX_GPIO44__FUNC_MSDC0_DAT3>,
+				 <PINMUX_GPIO45__FUNC_MSDC0_DAT4>,
+				 <PINMUX_GPIO46__FUNC_MSDC0_DAT5>,
+				 <PINMUX_GPIO47__FUNC_MSDC0_DAT6>,
+				 <PINMUX_GPIO48__FUNC_MSDC0_DAT7>;
+			input-enable;
+			drive-strength = <4>;
+			bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
+		};
+
+		pins-clk-dsl {
+			pinmux = <PINMUX_GPIO40__FUNC_MSDC0_CLK>,
+				 <PINMUX_GPIO39__FUNC_MSDC0_DSL>;
+			drive-strength = <4>;
+			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
+		};
+
+		pins-rst {
+			pinmux = <PINMUX_GPIO49__FUNC_MSDC0_RSTB>;
+			drive-strength = <4>;
+		};
+	};
 };
 
 &u2phy {
@@ -179,4 +219,8 @@
 &usb {
 	dr_mode = "peripheral";
 	status = "okay";
+};
+
+&watchdog {
+	mediatek,lk-normal-restart;
 };
