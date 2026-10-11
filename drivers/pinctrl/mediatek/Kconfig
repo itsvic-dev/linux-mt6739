@@ -133,6 +133,15 @@ config PINCTRL_MT2712
 	default ARM64 && ARCH_MEDIATEK
 	select PINCTRL_MTK
 
+config PINCTRL_MT6739
+	tristate "MediaTek MT6739 pin control"
+	depends on OF
+	depends on ARM64 || COMPILE_TEST
+	select PINCTRL_MTK_PARIS
+	help
+	  Say yes here to support pin controller and gpio driver
+	  on MediaTek MT6739 SoC.
+
 config PINCTRL_MT6765
 	tristate "MediaTek MT6765 pin control"
 	depends on OF
