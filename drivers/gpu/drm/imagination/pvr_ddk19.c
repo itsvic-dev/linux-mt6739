@@ -23,6 +23,7 @@
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/ktime.h>
+#include <linux/moduleparam.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/seq_file.h>
@@ -118,11 +119,15 @@ static int pvr_ddk19_power_init(struct pvr_device *pvr_dev)
 	return pvr_power_sequence_ops_manual.init(pvr_dev);
 }
 
+/* HW APM switches MFG1 through the SPM firmware, which mainline does not load. */
+static bool hw_apm;
+module_param(hw_apm, bool, 0644);
+
 static int pvr_ddk19_power_on(struct pvr_device *pvr_dev)
 {
 	int err = pvr_power_sequence_ops_manual.power_on(pvr_dev);
 
-	if (err)
+	if (err || !hw_apm)
 		return err;
 
 	for (int i = 0; i < ARRAY_SIZE(ddk19_hw_apm); i++)
