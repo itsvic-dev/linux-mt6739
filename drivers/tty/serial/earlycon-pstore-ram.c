@@ -43,9 +43,13 @@ static int __init pstoreram_setup(struct earlycon_device *dev, const char *opt)
 		return -ENOMEM;
 
 	buf_cap = PSTORE_RAM_ZONE_SIZE - sizeof(*buf);
-	writel_relaxed(0, &buf->start);
-	writel_relaxed(0, &buf->size);
-	writel(PSTORE_RAM_SIG, &buf->sig);
+	if (readl_relaxed(&buf->sig) != PSTORE_RAM_SIG ||
+	    readl_relaxed(&buf->start) >= buf_cap ||
+	    readl_relaxed(&buf->size) > buf_cap) {
+		writel_relaxed(0, &buf->start);
+		writel_relaxed(0, &buf->size);
+		writel(PSTORE_RAM_SIG, &buf->sig);
+	}
 
 	dev->con->write = pstoreram_write;
 	return 0;
