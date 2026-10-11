@@ -82,8 +82,6 @@ static struct KAL_HALT_CTRL_T rHaltCtrl = {
 };
 
 /* framebuffer callback related variable and status flag */
-static struct notifier_block wlan_fb_notifier;
-void *wlan_fb_notifier_priv_data;
 BOOLEAN wlan_fb_power_down = FALSE;
 /*******************************************************************************
 *                                 M A C R O S
@@ -4789,75 +4787,13 @@ INT32 __weak kalSetCpuNumFreq(UINT_32 core_num, UINT_32 freq)
 	return 0;
 }
 
-static int wlan_fb_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
-{
-	struct fb_event *evdata = data;
-	INT_32 blank;
-	P_GLUE_INFO_T prGlueInfo = (P_GLUE_INFO_T)wlan_fb_notifier_priv_data;
-
-#ifdef ENHANCE_AP_MODE_THROUGHPUT
-	BOOLEAN fgIsPureAp = FALSE;
-#endif
-
-	/* If we aren't interested in this event, skip it immediately ... */
-	if (event != FB_EVENT_BLANK)
-		return 0;
-
-	if (prGlueInfo == NULL || prGlueInfo->prAdapter == NULL)
-		return 0;
-
-	if (kalHaltTryLock())
-		return 0;
-
-	blank = *(INT_32 *)evdata->data;
-
-	switch (blank) {
-	case FB_BLANK_UNBLANK:
-		if (!kalIsHalted())
-			kalPerMonEnable(prGlueInfo);
-		wlan_fb_power_down = FALSE;
-		break;
-	case FB_BLANK_POWERDOWN:
-		wlan_fb_power_down = TRUE;
-		if (!kalIsHalted()) {
-#ifdef ENHANCE_AP_MODE_THROUGHPUT
-			/* Distinguish AP mode from STA mode requirement  */
-			if (prGlueInfo && prGlueInfo->prAdapter && prGlueInfo->prAdapter->rWifiVar.prP2pFsmInfo)
-				fgIsPureAp = prGlueInfo->prAdapter->rWifiVar.prP2pFsmInfo->fgIsApMode;
-			if (!fgIsPureAp)
-				kalPerMonDisable(prGlueInfo);
-#else
-			kalPerMonDisable(prGlueInfo);
-#endif
-		}
-		break;
-	default:
-		break;
-	}
-
-	kalHaltUnlock();
-	return 0;
-}
-
 INT_32 kalFbNotifierReg(IN P_GLUE_INFO_T prGlueInfo)
 {
-	INT_32 i4Ret;
-
-	wlan_fb_notifier_priv_data = prGlueInfo;
-	wlan_fb_notifier.notifier_call = wlan_fb_notifier_callback;
-	i4Ret = fb_register_client(&wlan_fb_notifier);
-	if (i4Ret)
-		DBGLOG(SW4, WARN, "Register wlan_fb_notifier failed:%d\n", i4Ret);
-	else
-		DBGLOG(SW4, TRACE, "Register wlan_fb_notifier succeed\n");
-
-	return i4Ret;
+	return 0;
 }
 
 VOID kalFbNotifierUnReg(VOID)
 {
-	fb_unregister_client(&wlan_fb_notifier);
-	wlan_fb_notifier_priv_data = NULL;
 }
 /*
 ** change scheduler parameters, like schedule policy(RT thread or normal thread) and priority
