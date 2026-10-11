@@ -50,6 +50,7 @@
 #define WDT_MODE_IRQ_EN		(1 << 3)
 #define WDT_MODE_AUTO_START	(1 << 4)
 #define WDT_MODE_DUAL_EN	(1 << 6)
+#define WDT_MODE_DDR_RESERVE	(1 << 7)
 #define WDT_MODE_CNT_SEL	(1 << 8)
 #define WDT_MODE_KEY		0x22000000
 
@@ -77,6 +78,7 @@ struct mtk_wdt_dev {
 	bool disable_wdt_extrst;
 	bool reset_by_toprgu;
 	bool has_swsysrst_en;
+	bool lk_normal_restart;
 };
 
 struct mtk_wdt_data {
@@ -237,6 +239,14 @@ static int mtk_wdt_restart(struct watchdog_device *wdt_dev,
 	/* Enable reset in order to issue a system reset instead of an IRQ */
 	reg = readl(wdt_base + WDT_MODE);
 	reg &= ~WDT_MODE_IRQ_EN;
+	if (mtk_wdt->lk_normal_restart) {
+		/*
+		 * The MTK bootloaders read AUTO_START as "boot without power key",
+		 * and DDR_RESERVE as "crash, save a RAM dump".
+		 */
+		reg &= ~(WDT_MODE_EN | WDT_MODE_DUAL_EN | WDT_MODE_DDR_RESERVE);
+		reg |= WDT_MODE_EXRST_EN | WDT_MODE_AUTO_START;
+	}
 	writel(reg | WDT_MODE_KEY, wdt_base + WDT_MODE);
 
 	while (1) {
@@ -436,7 +446,11 @@ static int mtk_wdt_probe(struct platform_device *pdev)
 
 	watchdog_init_timeout(&mtk_wdt->wdt_dev, timeout, dev);
 	watchdog_set_nowayout(&mtk_wdt->wdt_dev, nowayout);
-	watchdog_set_restart_priority(&mtk_wdt->wdt_dev, 128);
+	mtk_wdt->lk_normal_restart =
+		of_property_read_bool(dev->of_node, "mediatek,lk-normal-restart");
+	/* Run before PSCI SYSTEM_RESET, which hangs in the ATF of these SoCs. */
+	watchdog_set_restart_priority(&mtk_wdt->wdt_dev,
+				      mtk_wdt->lk_normal_restart ? 192 : 128);
 
 	watchdog_set_drvdata(&mtk_wdt->wdt_dev, mtk_wdt);
 
