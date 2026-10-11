@@ -30,6 +30,14 @@
 		device-chemistry = "lithium-ion";
 		voltage-min-design-microvolt = <3400000>;
 		voltage-max-design-microvolt = <4350000>;
+		ocv-capacity-celsius = <25>;
+		ocv-capacity-table-0 = <4185000 100>, <4124700 95>, <4076100 90>,
+				       <4030900 85>, <3980100 80>, <3957200 75>,
+				       <3923800 70>, <3895700 65>, <3866500 60>,
+				       <3826200 55>, <3806800 50>, <3791600 45>,
+				       <3781300 40>, <3774800 35>, <3770400 30>,
+				       <3758900 25>, <3741700 20>, <3717300 15>,
+				       <3687800 10>, <3667500 5>, <3327000 0>;
 	};
 
 	fuel-gauge {
@@ -37,6 +45,7 @@
 		io-channels = <&pmic_adc MT6357_AUXADC_BATADC>;
 		io-channel-names = "voltage";
 		monitored-battery = <&battery>;
+		power-supplies = <&pmic_charger>;
 	};
 
 	reserved-memory {
@@ -278,6 +287,10 @@
 
 	power-controller {
 		compatible = "mediatek,mt6357-pwrc";
+	};
+
+	pmic_charger: charger {
+		compatible = "mediatek,mt6357-charger";
 	};
 };
 
