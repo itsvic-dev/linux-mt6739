@@ -5,6 +5,7 @@
 #include "mt6739.dtsi"
 #include "mt6357.dtsi"
 
+#include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/iio/adc/mediatek,mt6357-auxadc.h>
 
 / {
@@ -266,6 +267,26 @@
 			drive-strength = <4>;
 		};
 	};
+};
+
+&ap_i2c0 {
+	clock-frequency = <400000>;
+	status = "okay";
+
+	touchscreen@38 {
+		compatible = "focaltech,ft6236";
+		reg = <0x38>;
+		interrupts-extended = <&pinctrl 11 IRQ_TYPE_EDGE_FALLING>;
+		reset-gpios = <&pinctrl 51 GPIO_ACTIVE_LOW>;
+		vcc-supply = <&mt6357_vldo28_reg>;
+		touchscreen-size-x = <240>;
+		touchscreen-size-y = <320>;
+	};
+};
+
+&ap_i2c1 {
+	clock-frequency = <100000>;
+	status = "okay";
 };
 
 &mt6357_rtc {
