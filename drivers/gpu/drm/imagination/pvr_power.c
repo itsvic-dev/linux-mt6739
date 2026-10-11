@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /* Copyright (c) 2023 Imagination Technologies Ltd. */
 
+#include "pvr_ddk19.h"
 #include "pvr_device.h"
 #include "pvr_fw.h"
 #include "pvr_fw_startstop.h"
@@ -94,6 +95,9 @@ pvr_power_fw_disable(struct pvr_device *pvr_dev, bool hard_reset, bool rpm_suspe
 {
 	int err;
 
+	if (pvr_dev->device_data->ddk19)
+		return pvr_ddk19_fw_disable(pvr_dev, hard_reset, rpm_suspend);
+
 	if (!hard_reset) {
 		cancel_delayed_work_sync(&pvr_dev->watchdog.work);
 
@@ -122,6 +126,9 @@ static int
 pvr_power_fw_enable(struct pvr_device *pvr_dev, bool rpm_resume)
 {
 	int err;
+
+	if (pvr_dev->device_data->ddk19)
+		return pvr_ddk19_fw_enable(pvr_dev, rpm_resume);
 
 	if (rpm_resume)
 		enable_irq(pvr_dev->irq);
@@ -156,8 +163,14 @@ pvr_power_is_idle(struct pvr_device *pvr_dev)
 	 * FW power state can be out of date if a KCCB command has been submitted but the FW hasn't
 	 * started processing it yet. So also check the KCCB status.
 	 */
-	enum rogue_fwif_pow_state pow_state = READ_ONCE(pvr_dev->fw_dev.fwif_sysdata->pow_state);
-	bool kccb_idle = pvr_kccb_is_idle(pvr_dev);
+	enum rogue_fwif_pow_state pow_state;
+	bool kccb_idle;
+
+	if (pvr_dev->device_data->ddk19)
+		return pvr_ddk19_is_idle(pvr_dev);
+
+	pow_state = READ_ONCE(pvr_dev->fw_dev.fwif_sysdata->pow_state);
+	kccb_idle = pvr_kccb_is_idle(pvr_dev);
 
 	return (pow_state == ROGUE_FWIF_POW_IDLE) && kccb_idle;
 }

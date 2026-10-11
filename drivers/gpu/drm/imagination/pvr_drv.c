@@ -689,6 +689,9 @@ pvr_ioctl_create_context(struct drm_device *drm_dev, void *raw_args,
 	int idx;
 	int ret;
 
+	if (to_pvr_device(drm_dev)->device_data->ddk19)
+		return -EOPNOTSUPP;
+
 	if (!drm_dev_enter(drm_dev, &idx))
 		return -EIO;
 
@@ -747,6 +750,9 @@ pvr_ioctl_create_free_list(struct drm_device *drm_dev, void *raw_args,
 	struct pvr_free_list *free_list;
 	int idx;
 	int err;
+
+	if (to_pvr_device(drm_dev)->device_data->ddk19)
+		return -EOPNOTSUPP;
 
 	if (!drm_dev_enter(drm_dev, &idx))
 		return -EIO;
@@ -834,6 +840,9 @@ pvr_ioctl_create_hwrt_dataset(struct drm_device *drm_dev, void *raw_args,
 	int idx;
 	int err;
 
+	if (to_pvr_device(drm_dev)->device_data->ddk19)
+		return -EOPNOTSUPP;
+
 	if (!drm_dev_enter(drm_dev, &idx))
 		return -EIO;
 
@@ -919,6 +928,9 @@ pvr_ioctl_create_vm_context(struct drm_device *drm_dev, void *raw_args,
 	struct pvr_vm_context *vm_ctx;
 	int idx;
 	int err;
+
+	if (to_pvr_device(drm_dev)->device_data->ddk19)
+		return -EOPNOTSUPP;
 
 	if (!drm_dev_enter(drm_dev, &idx))
 		return -EIO;
@@ -1154,6 +1166,9 @@ pvr_ioctl_submit_jobs(struct drm_device *drm_dev, void *raw_args,
 	int err;
 
 	trace_pvr_job_submit_ioctl(pvr_dev, args->jobs.count);
+
+	if (to_pvr_device(drm_dev)->device_data->ddk19)
+		return -EOPNOTSUPP;
 
 	if (!drm_dev_enter(drm_dev, &idx))
 		return -EIO;

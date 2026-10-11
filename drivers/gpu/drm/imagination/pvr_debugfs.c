@@ -27,6 +27,9 @@ pvr_debugfs_init(struct drm_minor *minor)
 	struct pvr_device *pvr_dev = to_pvr_device(drm_dev);
 	struct dentry *root = minor->debugfs_root;
 
+	if (pvr_dev->device_data->ddk19)
+		return;
+
 	for (size_t i = 0; i < ARRAY_SIZE(pvr_debugfs_entries); ++i) {
 		const struct pvr_debugfs_entry *entry = &pvr_debugfs_entries[i];
 		struct dentry *dir;

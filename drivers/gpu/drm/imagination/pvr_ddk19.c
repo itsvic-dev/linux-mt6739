@@ -17,11 +17,13 @@
 #include <drm/drm_managed.h>
 #include <drm/drm_print.h>
 #include <linux/delay.h>
+#include <linux/cleanup.h>
 #include <linux/dma-mapping.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/ktime.h>
 #include <linux/platform_device.h>
+#include <linux/pm_runtime.h>
 #include <linux/slab.h>
 
 #define DDK19_CORE_CLOCK_SPEED 570000000
@@ -30,6 +32,17 @@
 
 struct pvr_ddk19 {
 	void __iomem *mfg;
+
+	struct mutex kccb_lock;
+	struct ddk19_fwif_ccb_ctl *kccb_ctl;
+	u8 *kccb;
+	struct ddk19_fwif_ccb_ctl *fwccb_ctl;
+	u8 *fwccb;
+	u32 *power_sync;
+	u32 *sync;
+	u32 sync_fw_addr;
+	u16 mmu_sync_val;
+	struct pvr_fw_object *sync_obj;
 
 	struct pvr_fw_object *init_obj;
 	struct ddk19_fwif_init *init;
@@ -84,6 +97,7 @@ static int pvr_ddk19_power_init(struct pvr_device *pvr_dev)
 	struct drm_device *drm_dev = from_pvr_device(pvr_dev);
 	struct platform_device *pdev = to_platform_device(drm_dev->dev);
 	struct pvr_ddk19 *ddk19;
+	int err;
 
 	ddk19 = drmm_kzalloc(drm_dev, sizeof(*ddk19), GFP_KERNEL);
 	if (!ddk19)
@@ -92,6 +106,10 @@ static int pvr_ddk19_power_init(struct pvr_device *pvr_dev)
 	ddk19->mfg = devm_platform_ioremap_resource(pdev, 1);
 	if (IS_ERR(ddk19->mfg))
 		return PTR_ERR(ddk19->mfg);
+
+	err = drmm_mutex_init(drm_dev, &ddk19->kccb_lock);
+	if (err)
+		return err;
 
 	pvr_dev->ddk19 = ddk19;
 
@@ -364,6 +382,7 @@ static void pvr_ddk19_destroy_structures(struct pvr_device *pvr_dev)
 {
 	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
 
+	pvr_ddk19_free(&ddk19->sync_obj);
 	pvr_ddk19_free(&ddk19->hwperf_ctl_obj);
 	pvr_ddk19_free(&ddk19->runtime_cfg_obj);
 	pvr_ddk19_free(&ddk19->gpu_util_obj);
@@ -386,10 +405,11 @@ static void pvr_ddk19_destroy_structures(struct pvr_device *pvr_dev)
 
 static int pvr_ddk19_ccb_init(struct pvr_device *pvr_dev, u32 num_log2, u32 cmd_size,
 			      struct pvr_fw_object **ctl_obj, u32 *ctl_fw_addr,
-			      struct pvr_fw_object **ccb_obj, u32 *ccb_fw_addr)
+			      struct ddk19_fwif_ccb_ctl **ctl_out,
+			      struct pvr_fw_object **ccb_obj, u32 *ccb_fw_addr, u8 **ccb_out)
 {
 	struct ddk19_fwif_ccb_ctl *ctl;
-	void *ccb;
+	u8 *ccb;
 
 	ctl = pvr_ddk19_alloc(pvr_dev, sizeof(*ctl), ctl_obj, ctl_fw_addr);
 	if (IS_ERR(ctl))
@@ -401,6 +421,8 @@ static int pvr_ddk19_ccb_init(struct pvr_device *pvr_dev, u32 num_log2, u32 cmd_
 
 	ctl->wrap_mask = (1 << num_log2) - 1;
 	ctl->cmd_size = cmd_size;
+	*ctl_out = ctl;
+	*ccb_out = ccb;
 
 	return 0;
 }
@@ -421,9 +443,19 @@ static int pvr_ddk19_create_structures(struct pvr_device *pvr_dev)
 		return PTR_ERR(init);
 	ddk19->init = init;
 
-	ptr = pvr_ddk19_alloc(pvr_dev, sizeof(u32), &ddk19->power_sync_obj, &power_sync_fw_addr);
-	if (IS_ERR(ptr))
+	ddk19->power_sync = pvr_ddk19_alloc(pvr_dev, sizeof(u32), &ddk19->power_sync_obj,
+					    &power_sync_fw_addr);
+	if (IS_ERR(ddk19->power_sync)) {
+		ptr = ddk19->power_sync;
 		goto err_alloc;
+	}
+
+	ddk19->sync = pvr_ddk19_alloc(pvr_dev, sizeof(u32), &ddk19->sync_obj,
+				      &ddk19->sync_fw_addr);
+	if (IS_ERR(ddk19->sync)) {
+		ptr = ddk19->sync;
+		goto err_alloc;
+	}
 
 	os_config = pvr_ddk19_alloc(pvr_dev, sizeof(*os_config), &ddk19->os_config_obj,
 				    &init->os_config);
@@ -444,12 +476,12 @@ static int pvr_ddk19_create_structures(struct pvr_device *pvr_dev)
 	init->fault_phys_addr = ddk19->fault_page_dma;
 
 	err = pvr_ddk19_ccb_init(pvr_dev, DDK19_KCCB_NUMCMDS_LOG2, DDK19_KCCB_CMD_SIZE,
-				 &ddk19->kccb_ctl_obj, &init->kccb_ctl,
-				 &ddk19->kccb_obj, &init->kccb);
+				 &ddk19->kccb_ctl_obj, &init->kccb_ctl, &ddk19->kccb_ctl,
+				 &ddk19->kccb_obj, &init->kccb, &ddk19->kccb);
 	if (!err)
 		err = pvr_ddk19_ccb_init(pvr_dev, DDK19_FWCCB_NUMCMDS_LOG2, DDK19_FWCCB_CMD_SIZE,
-					 &ddk19->fwccb_ctl_obj, &init->fwccb_ctl,
-					 &ddk19->fwccb_obj, &init->fwccb);
+					 &ddk19->fwccb_ctl_obj, &init->fwccb_ctl, &ddk19->fwccb_ctl,
+					 &ddk19->fwccb_obj, &init->fwccb, &ddk19->fwccb);
 	if (err) {
 		ptr = ERR_PTR(err);
 		goto err_alloc;
@@ -570,12 +602,215 @@ static void pvr_ddk19_dump_state(struct pvr_device *pvr_dev)
 			       ddk19->trace, min_t(u32, ptr, 256) * sizeof(u32), false);
 }
 
+static int pvr_ddk19_poll(u32 *ptr, u32 value, u32 timeout_us)
+{
+	u32 v;
+
+	return read_poll_timeout(READ_ONCE, v, v == value, 100, timeout_us, false, *ptr);
+}
+
+static int pvr_ddk19_wait_for_boot(struct pvr_device *pvr_dev)
+{
+	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
+	int err = pvr_ddk19_poll(&ddk19->init->firmware_started, 1, DDK19_BOOT_TIMEOUT_US);
+
+	if (err)
+		drm_err(from_pvr_device(pvr_dev), "ddk19: firmware did not start\n");
+
+	return err;
+}
+
+static int pvr_ddk19_kccb_send(struct pvr_device *pvr_dev, struct ddk19_fwif_kccb_cmd *cmd)
+{
+	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
+	struct ddk19_fwif_ccb_ctl *ctl = ddk19->kccb_ctl;
+	u32 write_offset, next, read_offset;
+	int err;
+
+	cmd->dm = DDK19_DM_GP;
+
+	guard(mutex)(&ddk19->kccb_lock);
+
+	write_offset = READ_ONCE(ctl->write_offset);
+	next = (write_offset + 1) & ctl->wrap_mask;
+	err = read_poll_timeout(READ_ONCE, read_offset, read_offset != next, 100, 100000, false,
+				ctl->read_offset);
+	if (err)
+		return err;
+
+	memcpy(ddk19->kccb + write_offset * DDK19_KCCB_CMD_SIZE, cmd, sizeof(*cmd));
+	wmb();
+	WRITE_ONCE(ctl->write_offset, next);
+
+	pvr_fw_mts_schedule(pvr_dev, (DDK19_DM_GP & ~ROGUE_CR_MTS_SCHEDULE_DM_CLRMSK) |
+				     ROGUE_CR_MTS_SCHEDULE_TASK_COUNTED);
+
+	return 0;
+}
+
+static bool pvr_ddk19_kccb_is_idle(struct pvr_device *pvr_dev)
+{
+	struct ddk19_fwif_ccb_ctl *ctl = pvr_dev->ddk19->kccb_ctl;
+
+	return READ_ONCE(ctl->read_offset) == READ_ONCE(ctl->write_offset);
+}
+
+int pvr_ddk19_sync(struct pvr_device *pvr_dev)
+{
+	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
+	struct ddk19_fwif_kccb_cmd cmd = {
+		.cmd_type = DDK19_KCCB_CMD_SYNC,
+		.data.sync = { .sync_fw_addr = ddk19->sync_fw_addr, .update_val = 1 },
+	};
+	int err;
+
+	WRITE_ONCE(*ddk19->sync, 0);
+
+	err = pvr_ddk19_kccb_send(pvr_dev, &cmd);
+	if (err)
+		return err;
+
+	return pvr_ddk19_poll(ddk19->sync, 1, 1000000);
+}
+
+int pvr_ddk19_mmu_flush(struct pvr_device *pvr_dev, u32 flags)
+{
+	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
+	struct ddk19_fwif_kccb_cmd cmd = {
+		.cmd_type = DDK19_KCCB_CMD_MMUCACHE,
+		.data.mmu_cache = {
+			.flags = flags,
+			.sync_fw_addr = ddk19->sync_fw_addr,
+			.sync_update_val = ++ddk19->mmu_sync_val,
+		},
+	};
+	int err;
+
+	err = pvr_ddk19_kccb_send(pvr_dev, &cmd);
+	if (err)
+		return err;
+
+	return pvr_ddk19_poll(ddk19->sync, cmd.data.mmu_cache.sync_update_val, 1000000);
+}
+
+static int pvr_ddk19_pow_request(struct pvr_device *pvr_dev, u32 pow_type, u32 request,
+				 u32 pow_state)
+{
+	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
+	struct ddk19_fwif_kccb_cmd cmd = {
+		.cmd_type = DDK19_KCCB_CMD_POW,
+		.data.pow = { .pow_type = pow_type, .request = request },
+	};
+	u32 v;
+	int err;
+
+	WRITE_ONCE(*ddk19->power_sync, 0);
+	err = pvr_ddk19_kccb_send(pvr_dev, &cmd);
+	if (err)
+		return err;
+
+	err = read_poll_timeout(READ_ONCE, v, v != 0, 100, 1000000, false, *ddk19->power_sync);
+	if (err)
+		return err;
+
+	return READ_ONCE(ddk19->tracebuf->pow_state) == pow_state ? 0 : -EBUSY;
+}
+
+int pvr_ddk19_fw_disable(struct pvr_device *pvr_dev, bool hard_reset, bool rpm_suspend)
+{
+	int err;
+
+	if (!hard_reset) {
+		u32 pow_state = READ_ONCE(pvr_dev->ddk19->tracebuf->pow_state);
+
+		if (pow_state != DDK19_POW_STATE_FORCED_IDLE && pow_state != DDK19_POW_STATE_OFF) {
+			err = pvr_ddk19_pow_request(pvr_dev, DDK19_POW_FORCED_IDLE_REQ,
+						    DDK19_POWER_FORCE_IDLE,
+						    DDK19_POW_STATE_FORCED_IDLE);
+			if (err)
+				return err;
+		}
+
+		err = pvr_ddk19_pow_request(pvr_dev, DDK19_POW_OFF_REQ, 1, DDK19_POW_STATE_OFF);
+		if (err)
+			return err;
+	}
+
+	if (rpm_suspend)
+		disable_irq(pvr_dev->irq);
+
+	err = pvr_fw_stop(pvr_dev);
+	if (err && rpm_suspend)
+		enable_irq(pvr_dev->irq);
+
+	return err;
+}
+
+int pvr_ddk19_fw_enable(struct pvr_device *pvr_dev, bool rpm_resume)
+{
+	int err;
+
+	if (rpm_resume)
+		enable_irq(pvr_dev->irq);
+
+	WRITE_ONCE(pvr_dev->ddk19->init->firmware_started, 0);
+
+	err = pvr_fw_start(pvr_dev);
+	if (!err) {
+		err = pvr_ddk19_wait_for_boot(pvr_dev);
+		if (err)
+			pvr_fw_stop(pvr_dev);
+	}
+
+	if (err && rpm_resume)
+		disable_irq(pvr_dev->irq);
+
+	return err;
+}
+
+bool pvr_ddk19_is_idle(struct pvr_device *pvr_dev)
+{
+	return READ_ONCE(pvr_dev->ddk19->tracebuf->pow_state) == DDK19_POW_STATE_IDLE &&
+	       pvr_ddk19_kccb_is_idle(pvr_dev);
+}
+
+void pvr_ddk19_process_irq(struct pvr_device *pvr_dev)
+{
+	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
+	struct ddk19_fwif_ccb_ctl *ctl = ddk19->fwccb_ctl;
+	u32 read_offset = READ_ONCE(ctl->read_offset);
+
+	while (read_offset != READ_ONCE(ctl->write_offset)) {
+		struct ddk19_fwif_fwccb_cmd *cmd =
+			(void *)ddk19->fwccb + read_offset * DDK19_FWCCB_CMD_SIZE;
+
+		dev_info_ratelimited(from_pvr_device(pvr_dev)->dev, "ddk19: FWCCB command %u\n",
+				     READ_ONCE(cmd->cmd_type));
+		read_offset = (read_offset + 1) & ctl->wrap_mask;
+		WRITE_ONCE(ctl->read_offset, read_offset);
+	}
+
+	if (pvr_ddk19_is_idle(pvr_dev))
+		pm_request_autosuspend(from_pvr_device(pvr_dev)->dev);
+}
+
+void pvr_ddk19_fw_fini(struct pvr_device *pvr_dev)
+{
+	struct pvr_fw_device *fw_dev = &pvr_dev->fw_dev;
+
+	WRITE_ONCE(fw_dev->initialised, false);
+
+	pvr_ddk19_destroy_structures(pvr_dev);
+	pvr_fw_cleanup(pvr_dev);
+	drm_mm_takedown(&fw_dev->fw_mm);
+	fw_dev->defs->fini(pvr_dev);
+}
+
 int pvr_ddk19_fw_init(struct pvr_device *pvr_dev)
 {
 	struct drm_device *drm_dev = from_pvr_device(pvr_dev);
 	struct pvr_fw_device *fw_dev = &pvr_dev->fw_dev;
 	struct ddk19_fwif_compchecks *cc;
-	ktime_t deadline;
 	int err;
 
 	fw_dev->defs = &pvr_fw_defs_ddk19;
@@ -609,33 +844,22 @@ int pvr_ddk19_fw_init(struct pvr_device *pvr_dev)
 	if (err)
 		goto err_destroy_structures;
 
-	deadline = ktime_add_us(ktime_get(), DDK19_BOOT_TIMEOUT_US);
-	while (!READ_ONCE(pvr_dev->ddk19->init->firmware_started) &&
-	       ktime_before(ktime_get(), deadline))
-		usleep_range(1000, 2000);
+	err = pvr_ddk19_wait_for_boot(pvr_dev);
+	pvr_ddk19_dump_state(pvr_dev);
+	if (err) {
+		pvr_cr_write64(pvr_dev, ROGUE_CR_SOFT_RESET, ROGUE_CR_SOFT_RESET__PBE2_XE__MASKFULL);
+		(void)pvr_cr_read64(pvr_dev, ROGUE_CR_SOFT_RESET);
+		goto err_destroy_structures;
+	}
 
 	cc = &pvr_dev->ddk19->init->compchecks;
-	if (!READ_ONCE(pvr_dev->ddk19->init->firmware_started)) {
-		drm_err(drm_dev, "ddk19: firmware did not start\n");
-		err = -ETIMEDOUT;
-	} else {
-		drm_info(drm_dev, "ddk19: firmware started, timestamp %u\n",
-			 pvr_dev->ddk19->init->firmware_started_timestamp);
-		drm_info(drm_dev,
-			 "ddk19: compchecks updated %u FW BNC 0x%016llx V '%.8s' HW BNC 0x%016llx V '%.8s'\n",
-			 cc->updated, cc->fw_bvnc.bnc, cc->fw_bvnc.v, cc->hw_bvnc.bnc,
-			 cc->hw_bvnc.v);
-		drm_info(drm_dev,
-			 "ddk19: DDK version 0x%08x build %u options 0x%08x processor 0x%08x\n",
-			 cc->ddk_version, cc->ddk_build, cc->build_options,
-			 cc->fw_processor_version);
-		err = -ENODEV;
-	}
-	pvr_ddk19_dump_state(pvr_dev);
+	drm_info(drm_dev, "ddk19: firmware %u.%u build %u for BVNC 22.%.8s.%llu.%llu started\n",
+		 cc->ddk_version >> 16, cc->ddk_version & 0xffff, cc->ddk_build, cc->fw_bvnc.v,
+		 (cc->fw_bvnc.bnc >> 16) & 0xffff, cc->fw_bvnc.bnc & 0xffff);
 
-	/* Job submission is not there yet, so halt the firmware before freeing its memory. */
-	pvr_cr_write64(pvr_dev, ROGUE_CR_SOFT_RESET, ROGUE_CR_SOFT_RESET__PBE2_XE__MASKFULL);
-	(void)pvr_cr_read64(pvr_dev, ROGUE_CR_SOFT_RESET);
+	WRITE_ONCE(fw_dev->initialised, true);
+
+	return 0;
 
 err_destroy_structures:
 	pvr_ddk19_destroy_structures(pvr_dev);

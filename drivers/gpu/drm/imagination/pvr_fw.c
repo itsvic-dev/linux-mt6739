@@ -1048,6 +1048,11 @@ pvr_fw_fini(struct pvr_device *pvr_dev)
 {
 	struct pvr_fw_device *fw_dev = &pvr_dev->fw_dev;
 
+	if (pvr_dev->device_data->ddk19) {
+		pvr_ddk19_fw_fini(pvr_dev);
+		return;
+	}
+
 	WRITE_ONCE(fw_dev->initialised, false);
 
 	pvr_fw_destroy_structures(pvr_dev);

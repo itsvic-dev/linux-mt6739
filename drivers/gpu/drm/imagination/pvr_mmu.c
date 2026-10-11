@@ -4,6 +4,7 @@
 #include "pvr_mmu.h"
 
 #include "pvr_ccb.h"
+#include "pvr_ddk19.h"
 #include "pvr_device.h"
 #include "pvr_fw.h"
 #include "pvr_gem.h"
@@ -143,6 +144,11 @@ int pvr_mmu_flush_exec(struct pvr_device *pvr_dev, bool wait)
 
 	if (!cmd_mmu_cache_data->cache_flags)
 		goto err_drm_dev_exit;
+
+	if (pvr_dev->device_data->ddk19) {
+		err = pvr_ddk19_mmu_flush(pvr_dev, cmd_mmu_cache_data->cache_flags);
+		goto err_drm_dev_exit;
+	}
 
 	cmd_mmu_cache.cmd_type = ROGUE_FWIF_KCCB_CMD_MMUCACHE;
 
