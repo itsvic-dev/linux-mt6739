@@ -161,6 +161,14 @@ config COMMON_CLK_MT6735_VENCSYS
 	  This enables a driver for clocks provided by vencsys
 	  on the MediaTek MT6735 SoC.
 
+config COMMON_CLK_MT6739
+	bool "Clock driver for MediaTek MT6739"
+	depends on ARM64 || COMPILE_TEST
+	select COMMON_CLK_MEDIATEK
+	help
+	  This driver supports the MediaTek MT6739 apmixedsys, topckgen
+	  and infracfg_ao clocks.
+
 config COMMON_CLK_MT6765
        bool "Clock driver for MediaTek MT6765"
        depends on (ARCH_MEDIATEK && ARM64) || COMPILE_TEST
