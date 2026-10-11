@@ -104,6 +104,7 @@ static const struct mtk_pmic_regs mt6357_regs = {
 				   MTK_PMIC_MT6331_HOMEKEY_RST),
 	.pmic_rst_reg = MT6357_TOP_RST_MISC,
 	.rst_lprst_mask = MTK_PMIC_MT6331_RST_DU_MASK,
+	.key_release_irq = true,
 };
 
 static const struct mtk_pmic_regs mt6358_regs = {
