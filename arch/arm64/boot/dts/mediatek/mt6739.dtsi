@@ -177,6 +177,34 @@
 			reset-names = "pwrap";
 		};
 
+		ap_i2c0: i2c@11007000 {
+			compatible = "mediatek,mt6739-i2c";
+			reg = <0 0x11007000 0 0x1000>,
+			      <0 0x11000100 0 0x80>;
+			interrupts = <GIC_SPI 84 IRQ_TYPE_LEVEL_LOW>;
+			clocks = <&infracfg_ao CLK_INFRA_I2C0>,
+				 <&infracfg_ao CLK_INFRA_AP_DMA>;
+			clock-names = "main", "dma";
+			clock-div = <5>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		ap_i2c1: i2c@11008000 {
+			compatible = "mediatek,mt6739-i2c";
+			reg = <0 0x11008000 0 0x1000>,
+			      <0 0x11000180 0 0x80>;
+			interrupts = <GIC_SPI 85 IRQ_TYPE_LEVEL_LOW>;
+			clocks = <&infracfg_ao CLK_INFRA_I2C1>,
+				 <&infracfg_ao CLK_INFRA_AP_DMA>;
+			clock-names = "main", "dma";
+			clock-div = <5>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
 		display: display@1400a000 {
 			compatible = "mediatek,mt6739-dbi-display";
 			reg = <0 0x1400a000 0 0x1000>,
