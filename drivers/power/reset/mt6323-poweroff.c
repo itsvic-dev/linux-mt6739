@@ -12,6 +12,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/property.h>
 #include <linux/mfd/mt6397/core.h>
 #include <linux/mfd/mt6397/rtc.h>
 #include <linux/reboot.h>
@@ -47,12 +48,32 @@ static int mt6323_do_pwroff(struct sys_off_data *data)
 	return NOTIFY_DONE;
 }
 
+#define MT6357_RG_PWRHOLD	BIT(0)
+
+static int mt6357_do_pwroff(struct sys_off_data *data)
+{
+	struct mt6323_pwrc *pwrc = data->cb_data;
+
+	regmap_update_bits(pwrc->regmap, pwrc->base, MT6357_RG_PWRHOLD, 0);
+
+	mdelay(1000);
+
+	WARN_ONCE(1, "Unable to power off system\n");
+
+	return NOTIFY_DONE;
+}
+
 static int mt6323_pwrc_probe(struct platform_device *pdev)
 {
 	struct mt6397_chip *mt6397_chip = dev_get_drvdata(pdev->dev.parent);
+	int (*do_pwroff)(struct sys_off_data *data);
 	struct mt6323_pwrc *pwrc;
 	struct resource *res;
 	int ret;
+
+	do_pwroff = device_get_match_data(&pdev->dev);
+	if (!do_pwroff)
+		return -EINVAL;
 
 	pwrc = devm_kzalloc(&pdev->dev, sizeof(*pwrc), GFP_KERNEL);
 	if (!pwrc)
@@ -69,7 +90,7 @@ static int mt6323_pwrc_probe(struct platform_device *pdev)
 	ret = devm_register_sys_off_handler(pwrc->dev,
 					    SYS_OFF_MODE_POWER_OFF,
 					    SYS_OFF_PRIO_DEFAULT,
-					    mt6323_do_pwroff,
+					    do_pwroff,
 					    pwrc);
 	if (ret)
 		return dev_err_probe(pwrc->dev, ret, "failed to register power-off handler\n");
@@ -78,7 +99,8 @@ static int mt6323_pwrc_probe(struct platform_device *pdev)
 }
 
 static const struct of_device_id mt6323_pwrc_dt_match[] = {
-	{ .compatible = "mediatek,mt6323-pwrc" },
+	{ .compatible = "mediatek,mt6323-pwrc", .data = mt6323_do_pwroff },
+	{ .compatible = "mediatek,mt6357-pwrc", .data = mt6357_do_pwroff },
 	{},
 };
 MODULE_DEVICE_TABLE(of, mt6323_pwrc_dt_match);
