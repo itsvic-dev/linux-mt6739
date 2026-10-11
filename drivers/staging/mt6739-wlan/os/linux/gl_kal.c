@@ -565,7 +565,7 @@ VOID kalUpdateMACAddress(IN P_GLUE_INFO_T prGlueInfo, IN PUINT_8 pucMacAddr)
 	ASSERT(pucMacAddr);
 
 	if (UNEQUAL_MAC_ADDR(prGlueInfo->prDevHandler->dev_addr, pucMacAddr))
-		memcpy(prGlueInfo->prDevHandler->dev_addr, pucMacAddr, PARAM_MAC_ADDR_LEN);
+		eth_hw_addr_set(prGlueInfo->prDevHandler, pucMacAddr);
 
 }
 
@@ -973,7 +973,6 @@ WLAN_STATUS kalRxIndicatePkts(IN P_GLUE_INFO_T prGlueInfo, IN PVOID apvPkts[], I
 
 		STATS_RX_PKT_INFO_DISPLAY(prSkb->data);
 
-		prNetDev->last_rx = jiffies;
 		prSkb->protocol = eth_type_trans(prSkb, prNetDev);
 		prSkb->dev = prNetDev;
 		/* DBGLOG_MEM32(RX, TRACE, (PUINT_32)prSkb->data, prSkb->len); */
@@ -995,7 +994,7 @@ WLAN_STATUS kalRxIndicatePkts(IN P_GLUE_INFO_T prGlueInfo, IN PVOID apvPkts[], I
 #endif
 
 		if (!in_interrupt())
-			netif_rx_ni(prSkb);	/* only in non-interrupt context */
+			netif_rx(prSkb);	/* only in non-interrupt context */
 		else
 			netif_rx(prSkb);
 

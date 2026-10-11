@@ -632,7 +632,7 @@ unsigned int _cfg80211_classify8021d(struct sk_buff *skb)
 static const UINT_16 au16Wlan1dToQueueIdx[8] = { 1, 0, 0, 1, 2, 2, 3, 3 };
 
 static UINT_16 wlanSelectQueue(struct net_device *dev, struct sk_buff *skb,
-				void *accel_priv, select_queue_fallback_t fallback)
+				struct net_device *sb_dev)
 {
 	skb->priority = _cfg80211_classify8021d(skb);
 
@@ -1935,7 +1935,7 @@ static int wlanSetMacAddress(struct net_device *ndev, void *addr)
 	sa = (struct sockaddr *)addr;
 
 	COPY_MAC_ADDR(prAisBssInfo->aucOwnMacAddr, sa->sa_data);
-	COPY_MAC_ADDR(prGlueInfo->prDevHandler->dev_addr, sa->sa_data);
+	eth_hw_addr_set(prGlueInfo->prDevHandler, sa->sa_data);
 	DBGLOG(INIT, INFO, "Set connect random macaddr to " MACSTR ".\n",
 	       MAC2STR(prAisBssInfo->aucOwnMacAddr));
 
@@ -3143,7 +3143,7 @@ bailout:
 				DBGLOG(INIT, WARN, "set MAC addr fail 0x%x\n", rStatus);
 				prGlueInfo->u4ReadyFlag = 0;
 			} else {
-				ether_addr_copy(prGlueInfo->prDevHandler->dev_addr, (const u8 *)&(MacAddr.sa_data));
+				eth_hw_addr_set(prGlueInfo->prDevHandler, (const u8 *)&(MacAddr.sa_data));
 				ether_addr_copy(prGlueInfo->prDevHandler->perm_addr,
 					prGlueInfo->prDevHandler->dev_addr);
 
