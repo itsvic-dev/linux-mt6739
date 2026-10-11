@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0
+config MT6739_WLAN
+	tristate "MediaTek MT6739 CONSYS Wi-Fi driver (gen2)"
+	depends on ARCH_MEDIATEK && CFG80211 && MTK_MT6739_CONSYS
+	help
+	  MediaTek wlan gen2 driver for the Wi-Fi part of the MT6739
+	  integrated connectivity block (CONSYS), using the AHB host
+	  interface. Station mode only.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called mt6739-wlan.
