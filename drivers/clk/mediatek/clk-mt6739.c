@@ -10,6 +10,7 @@
 #include "clk-mtk.h"
 #include "clk-mux.h"
 #include "clk-pll.h"
+#include "reset.h"
 
 #include <dt-bindings/clock/mediatek,mt6739-clk.h>
 
@@ -548,6 +549,14 @@ free_data:
 	return r;
 }
 
+static u16 infra_rst_ofs[] = { 0x140 };
+
+static const struct mtk_clk_rst_desc infra_rst_desc = {
+	.version = MTK_RST_SET_CLR,
+	.rst_bank_ofs = infra_rst_ofs,
+	.rst_bank_nr = ARRAY_SIZE(infra_rst_ofs),
+};
+
 static int clk_mt6739_infra_probe(struct platform_device *pdev)
 {
 	struct device_node *node = pdev->dev.of_node;
@@ -567,8 +576,14 @@ static int clk_mt6739_infra_probe(struct platform_device *pdev)
 	if (r)
 		goto unregister_gates;
 
+	r = mtk_register_reset_controller_with_dev(&pdev->dev, &infra_rst_desc);
+	if (r)
+		goto del_provider;
+
 	return 0;
 
+del_provider:
+	of_clk_del_provider(node);
 unregister_gates:
 	mtk_clk_unregister_gates(infra_clks, ARRAY_SIZE(infra_clks), clk_data);
 free_data:
