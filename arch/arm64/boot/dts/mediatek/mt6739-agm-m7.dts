@@ -295,6 +295,13 @@
 	};
 };
 
+&connsys {
+	vcn18-supply = <&mt6357_vcn18_reg>;
+	vcn28-supply = <&mt6357_vcn28_reg>;
+	vcn33-bt-supply = <&mt6357_vcn33_bt_reg>;
+	status = "okay";
+};
+
 &mt6357_rtc {
 	mode-recovery = <0x10>;
 	mode-bootloader = <0x2000>;
