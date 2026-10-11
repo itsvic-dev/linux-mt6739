@@ -897,6 +897,23 @@ void pvr_ddk19_init_common_context(void *dst, u32 ccbctl_fw_addr, u32 ccb_fw_add
 	cctx->dm = dm;
 }
 
+void pvr_ddk19_free_list_init(void *dst, u64 dev_addr, u32 max_pages, u32 current_pages,
+			      u32 grow_pages, u32 ready_pages, u32 id)
+{
+	struct ddk19_fwif_freelist *fl = dst;
+
+	memset(fl, 0, sizeof(*fl));
+	fl->freelist_dev_addr = dev_addr;
+	fl->current_dev_addr = dev_addr + (max_pages - current_pages) * sizeof(u32);
+	fl->current_stack_top = current_pages - 1;
+	fl->max_pages = max_pages;
+	fl->grow_pages = grow_pages;
+	fl->current_pages = current_pages;
+	fl->freelist_id = id;
+	fl->ready_pages = ready_pages;
+	fl->oom_ready_limit = ready_pages;
+}
+
 u32 pvr_ddk19_job_cmd_len(struct pvr_job *job)
 {
 	switch (job->type) {

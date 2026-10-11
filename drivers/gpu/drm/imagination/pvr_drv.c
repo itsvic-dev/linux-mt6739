@@ -748,9 +748,6 @@ pvr_ioctl_create_free_list(struct drm_device *drm_dev, void *raw_args,
 	int idx;
 	int err;
 
-	if (to_pvr_device(drm_dev)->device_data->ddk19)
-		return -EOPNOTSUPP;
-
 	if (!drm_dev_enter(drm_dev, &idx))
 		return -EIO;
 

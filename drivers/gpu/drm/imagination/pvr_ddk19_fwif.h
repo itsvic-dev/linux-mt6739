@@ -357,6 +357,23 @@ struct ddk19_fwif_cmd_compute {
 	u32 max_deadline_ms;
 };
 
+struct ddk19_fwif_freelist {
+	u64 freelist_dev_addr;
+	u64 current_dev_addr;
+	u32 current_stack_top;
+	u32 max_pages;
+	u32 grow_pages;
+	u32 current_pages;
+	u32 allocated_page_count;
+	u32 allocated_mmu_page_count;
+	u32 hwr_counter;
+	u32 freelist_id;
+	u32 grow_pending;
+	u32 ready_pages;
+	u32 oom_ready_limit;
+	u32 padding;
+};
+
 struct ddk19_fwif_fwccb_cmd {
 	u32 cmd_type;
 	u32 padding;
@@ -391,6 +408,10 @@ DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, cbuf_queue_ctrl_addr, 136);
 DDK19_CHECK(struct ddk19_fwif_fwcommoncontext, read_offset_needs_reset, 152);
 
 static_assert(sizeof(struct ddk19_fwif_cmd_compute) == 120);
+
+static_assert(sizeof(struct ddk19_fwif_freelist) == 64);
+DDK19_CHECK(struct ddk19_fwif_freelist, hwr_counter, 40);
+DDK19_CHECK(struct ddk19_fwif_freelist, oom_ready_limit, 56);
 DDK19_CHECK(struct ddk19_fwif_cmd_compute, cdm_context_state_base_addr, 56);
 DDK19_CHECK(struct ddk19_fwif_cmd_compute, flags, 112);
 

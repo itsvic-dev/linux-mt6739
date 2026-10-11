@@ -41,6 +41,8 @@ u32 pvr_ddk19_ctx_state_size(enum drm_pvr_job_type type);
 void pvr_ddk19_init_common_context(void *dst, u32 ccbctl_fw_addr, u32 ccb_fw_addr,
 				   u32 fw_mem_ctx_fw_addr, u32 ctx_state_fw_addr, u32 priority,
 				   u32 ctx_id, u32 dm);
+void pvr_ddk19_free_list_init(void *dst, u64 dev_addr, u32 max_pages, u32 current_pages,
+			      u32 grow_pages, u32 ready_pages, u32 id);
 u32 pvr_ddk19_job_cmd_len(struct pvr_job *job);
 u32 pvr_ddk19_job_cmd(struct pvr_job *job, void *out);
 int pvr_ddk19_vm_context_init(struct pvr_device *pvr_dev, struct pvr_vm_context *vm_ctx);

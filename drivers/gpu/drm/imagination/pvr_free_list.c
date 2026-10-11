@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /* Copyright (c) 2023 Imagination Technologies Ltd. */
 
+#include "pvr_ddk19.h"
 #include "pvr_free_list.h"
 #include "pvr_gem.h"
 #include "pvr_hwrt.h"
@@ -176,6 +177,14 @@ free_list_fw_init(void *cpu_ptr, void *priv)
 	/* Fill out FW structure */
 	ready_pages = calculate_free_list_ready_pages(free_list,
 						      free_list->initial_num_pages);
+
+	if (free_list->pvr_dev->device_data->ddk19) {
+		pvr_ddk19_free_list_init(cpu_ptr, free_list->free_list_gpu_addr,
+					 free_list->max_pages,
+					 free_list->initial_num_pages - ready_pages,
+					 free_list->grow_pages, ready_pages, free_list->fw_id);
+		return;
+	}
 
 	fw_data->max_pages = free_list->max_pages;
 	fw_data->current_pages = free_list->initial_num_pages - ready_pages;
