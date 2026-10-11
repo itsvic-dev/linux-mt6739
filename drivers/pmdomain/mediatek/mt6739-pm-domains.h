@@ -22,6 +22,7 @@ static const struct scpsys_domain_data scpsys_domain_data_mt6739[] = {
 		.ctl_offs = MT6739_SPM_CONN_PWR_CON,
 		.pwr_sta_offs = MT6739_SPM_PWR_STATUS,
 		.pwr_sta2nd_offs = MT6739_SPM_PWR_STATUS_2ND,
+		.caps = MTK_SCPD_NO_STAY_ON,
 		.bp_cfg = {
 			BUS_PROT_WR(INFRA, MT6739_TOP_AXI_PROT_EN_CONN,
 				    MT6739_INFRA_TOPAXI_PROTECTEN_SET,
