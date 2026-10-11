@@ -287,6 +287,12 @@
 &ap_i2c1 {
 	clock-frequency = <100000>;
 	status = "okay";
+
+	charger@6a {
+		compatible = "halo,hl7005";
+		reg = <0x6a>;
+		monitored-battery = <&battery>;
+	};
 };
 
 &mt6357_rtc {
