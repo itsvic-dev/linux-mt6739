@@ -167,3 +167,7 @@
 		};
 	};
 };
+
+&watchdog {
+	mediatek,lk-normal-restart;
+};
