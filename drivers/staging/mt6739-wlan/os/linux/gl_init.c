@@ -649,6 +649,22 @@ static UINT_16 wlanSelectQueue(struct net_device *dev, struct sk_buff *skb,
 * \return (none)
 */
 /*----------------------------------------------------------------------------*/
+/* Android pushed NVRAM from a userspace daemon; here it is an optional firmware file. */
+static void glRequestNvram(IN P_GLUE_INFO_T prGlueInfo)
+{
+	const struct firmware *fw;
+
+	if (fgNvramAvailable)
+		return;
+	if (firmware_request_nowarn(&fw, "mt6739-wlan-nvram.bin", prGlueInfo->rHifInfo.Dev))
+		return;
+	if (fw->size >= sizeof(g_aucNvram)) {
+		kalMemCopy(g_aucNvram, fw->data, sizeof(g_aucNvram));
+		fgNvramAvailable = TRUE;
+	}
+	release_firmware(fw);
+}
+
 static void glLoadNvram(IN P_GLUE_INFO_T prGlueInfo, OUT P_REG_INFO_T prRegInfo)
 {
 	UINT_32 i, j, len, startAddr;
@@ -661,6 +677,7 @@ static void glLoadNvram(IN P_GLUE_INFO_T prGlueInfo, OUT P_REG_INFO_T prRegInfo)
 	if ((!prGlueInfo) || (!prRegInfo))
 		return;
 
+	glRequestNvram(prGlueInfo);
 	DBGLOG(INIT, INFO, "fgNvramAvailable = %u\n", fgNvramAvailable);
 	prGlueInfo->fgNvramAvailable = fgNvramAvailable;
 	if (!prGlueInfo->fgNvramAvailable) {
