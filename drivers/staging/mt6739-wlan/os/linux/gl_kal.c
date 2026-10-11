@@ -4793,22 +4793,22 @@ VOID kalChangeSchedParams(P_GLUE_INFO_T prGlueInfo, BOOLEAN fgNormalThread)
 		param.sched_priority = prGlueInfo->i4Priority;
 		DBGLOG(INIT, INFO, "RT priority %d\n", param.sched_priority);
 		if (prGlueInfo->main_thread && prGlueInfo->main_thread->policy != SCHED_FIFO)
-			sched_setscheduler(prGlueInfo->main_thread, SCHED_FIFO, &param);
+			sched_set_fifo(prGlueInfo->main_thread);
 #if CFG_SUPPORT_MULTITHREAD
 		if (prGlueInfo->rx_thread && prGlueInfo->rx_thread->policy != SCHED_FIFO)
-			sched_setscheduler(prGlueInfo->rx_thread, SCHED_FIFO, &param);
+			sched_set_fifo(prGlueInfo->rx_thread);
 #endif
 		return;
 	}
 	/* For normal thread */
 	if (prGlueInfo->main_thread && prGlueInfo->main_thread->policy != SCHED_NORMAL) {
-		sched_setscheduler(prGlueInfo->main_thread, SCHED_NORMAL, &param);
+		sched_set_normal(prGlueInfo->main_thread, 0);
 		/* set main_thread to highest normal priority */
 		set_user_nice(prGlueInfo->main_thread, PRIO_TO_NICE(DEFAULT_PRIO - 19));
 	}
 #if CFG_SUPPORT_MULTITHREAD
 	if (prGlueInfo->rx_thread && prGlueInfo->rx_thread->policy != SCHED_NORMAL) {
-		sched_setscheduler(prGlueInfo->rx_thread, SCHED_NORMAL, &param);
+		sched_set_normal(prGlueInfo->rx_thread, 0);
 		/* set rx_thread to highest normal priority */
 		set_user_nice(prGlueInfo->rx_thread, PRIO_TO_NICE(DEFAULT_PRIO - 19));
 	}
