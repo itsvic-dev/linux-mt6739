@@ -3,6 +3,7 @@
 /dts-v1/;
 
 #include "mt6739.dtsi"
+#include "mt6357.dtsi"
 
 / {
 	model = "AGM M7";
@@ -20,16 +21,6 @@
 	memory {
 		device_type = "memory";
 		reg = <0 0x40000000 0 0x20000000>;
-	};
-
-	/* Left on by the bootloader; stands in until there is an MT6357 regulator driver. */
-	vemc: regulator-vemc {
-		compatible = "regulator-fixed";
-		regulator-name = "vemc";
-		regulator-min-microvolt = <3000000>;
-		regulator-max-microvolt = <3000000>;
-		regulator-always-on;
-		regulator-boot-on;
 	};
 
 	reserved-memory {
@@ -178,13 +169,40 @@
 	};
 };
 
+&keyboard {
+	keypad,num-rows = <8>;
+	keypad,num-columns = <9>;
+	linux,keymap = <MATRIX_KEY(0, 1, KEY_F11)
+			MATRIX_KEY(3, 3, KEY_MENU)
+			MATRIX_KEY(3, 4, KEY_LEFT)
+			MATRIX_KEY(3, 5, KEY_2)
+			MATRIX_KEY(3, 6, KEY_8)
+			MATRIX_KEY(4, 3, KEY_UP)
+			MATRIX_KEY(4, 4, KEY_DOWN)
+			MATRIX_KEY(4, 5, KEY_4)
+			MATRIX_KEY(4, 6, KEY_9)
+			MATRIX_KEY(5, 3, KEY_BACK)
+			MATRIX_KEY(5, 4, KEY_RIGHT)
+			MATRIX_KEY(5, 5, KEY_5)
+			MATRIX_KEY(5, 6, KEY_NUMERIC_STAR)
+			MATRIX_KEY(6, 3, KEY_ENTER)
+			MATRIX_KEY(6, 4, KEY_3)
+			MATRIX_KEY(6, 5, KEY_6)
+			MATRIX_KEY(6, 6, KEY_0)
+			MATRIX_KEY(7, 3, KEY_SEND)
+			MATRIX_KEY(7, 4, KEY_1)
+			MATRIX_KEY(7, 5, KEY_7)
+			MATRIX_KEY(7, 6, KEY_NUMERIC_POUND)>;
+	status = "okay";
+};
+
 &mmc0 {
 	pinctrl-names = "default", "state_uhs";
 	pinctrl-0 = <&mmc0_pins>;
 	pinctrl-1 = <&mmc0_pins>;
 	bus-width = <8>;
 	max-frequency = <52000000>;
-	vmmc-supply = <&vemc>;
+	vmmc-supply = <&mt6357_vemc_reg>;
 	cap-mmc-highspeed;
 	non-removable;
 	no-sd;
@@ -221,6 +239,36 @@
 			drive-strength = <4>;
 		};
 	};
+};
+
+&mt6357_pmic {
+	interrupts-extended = <&pinctrl 182 IRQ_TYPE_LEVEL_HIGH>;
+	interrupt-controller;
+	#interrupt-cells = <2>;
+
+	keys {
+		/* Same as stock: one-key long-press reset, shortest time. */
+		mediatek,long-press-mode = <1>;
+		power-off-time-sec = <0>;
+
+		/delete-node/ key-home;
+	};
+};
+
+&mt6357_vdram_reg {
+	regulator-always-on;
+};
+
+&mt6357_vio28_reg {
+	regulator-always-on;
+};
+
+&mt6357_vusb33_reg {
+	regulator-always-on;
+};
+
+&mt6357_vxo22_reg {
+	regulator-always-on;
 };
 
 &u2phy {
