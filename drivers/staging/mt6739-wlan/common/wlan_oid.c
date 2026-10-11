@@ -10473,9 +10473,11 @@ wlanoidSetWfdDebugMode(IN P_ADAPTER_T prAdapter,
 	DBGLOG(OID, INFO, "New WFD Debug: %d mode and period=0x%x\n", prCmdWfdDebugModeInfo->ucDebugMode,
 						prCmdWfdDebugModeInfo->u2PeriodInteval);
 
+#if CFG_ENABLE_WIFI_DIRECT
 	prAdapter->rWifiVar.prP2pFsmInfo->rWfdDebugSetting.ucWfdDebugMode = (UINT_8) prCmdWfdDebugModeInfo->ucDebugMode;
 	prAdapter->rWifiVar.prP2pFsmInfo->rWfdDebugSetting.u2WfdSNShowPeiroid =
 	    (UINT_16) prCmdWfdDebugModeInfo->u2PeriodInteval;
+#endif
 
 	return WLAN_STATUS_SUCCESS;
 }				/*wlanoidSetWfdDebugMode */
@@ -12684,13 +12686,15 @@ WLAN_STATUS wlanoidGetWifiType(IN P_ADAPTER_T prAdapter,
 	if ((gPrDev != NULL) &&
 	    (prParamGetWifiType->prNetDev == gPrDev))
 		ucBssIdx = (uint8_t)NETWORK_TYPE_AIS_INDEX;
+#if CFG_ENABLE_WIFI_DIRECT
 	else if ((g_P2pPrDev != NULL) &&
 		 (prParamGetWifiType->prNetDev == g_P2pPrDev))
 		ucBssIdx = (uint8_t)NETWORK_TYPE_P2P_INDEX;
+#endif
 	else {
 		DBGLOG(OID, ERROR,
-		       "network type index error! %p, %p, %p\n",
-		       prParamGetWifiType->prNetDev, gPrDev, g_P2pPrDev);
+		       "network type index error! %p, %p\n",
+		       prParamGetWifiType->prNetDev, gPrDev);
 		return WLAN_STATUS_INVALID_DATA;
 	}
 
