@@ -633,7 +633,7 @@ VOID nicTxReturnMsduInfoProfiling(IN P_ADAPTER_T prAdapter, IN P_MSDU_INFO_T prM
 	UINT_32 u4PktPrintPeriod = 0;
 #endif
 
-#if CFG_SUPPORT_WFD
+#if CFG_SUPPORT_WFD && CFG_ENABLE_WIFI_DIRECT
 	P_WFD_CFG_SETTINGS_T prWfdCfgSettings = (P_WFD_CFG_SETTINGS_T) NULL;
 
 	if (prAdapter->fgIsP2PRegistered) {

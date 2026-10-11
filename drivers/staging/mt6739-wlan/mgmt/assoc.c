@@ -114,7 +114,9 @@ APPEND_VAR_IE_ENTRY_T txAssocRespIETable[] = {
 	,			/* 221 */
 #endif
 
+#if CFG_ENABLE_WIFI_DIRECT
 	{(0), p2pFuncCalculateWSC_IELenForAssocRsp, p2pFuncGenerateWSC_IEForAssocRsp}	/* 221 */
+#endif
 
 };
 #endif

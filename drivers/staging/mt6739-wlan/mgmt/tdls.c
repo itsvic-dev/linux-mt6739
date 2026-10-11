@@ -3419,11 +3419,16 @@ TdlsexEnableDisableLink(ADAPTER_T *prAdapter,
 			 * reminder the function that we are CIPHER_SUITE_CCMP,
 			 * do not change cipher type to CIPHER_SUITE_WEP128
 			 */
+#if CFG_ENABLE_WIFI_DIRECT
 			eNetworkType == NETWORK_TYPE_AIS_INDEX ?
 				_wlanoidSetAddKey(prAdapter, &prStaRec->rTdlsKeyTemp,
 					  prStaRec->rTdlsKeyTemp.u4Length, FALSE, CIPHER_SUITE_CCMP, &u4BufLen) :
 				_wlanoidSetAddP2PTDLSKey(prAdapter, &prStaRec->rTdlsKeyTemp,
 						prStaRec->rTdlsKeyTemp.u4Length, &u4BufLen);
+#else
+			_wlanoidSetAddKey(prAdapter, &prStaRec->rTdlsKeyTemp,
+					  prStaRec->rTdlsKeyTemp.u4Length, FALSE, CIPHER_SUITE_CCMP, &u4BufLen);
+#endif
 
 			/* clear the temp key */
 			prStaRec->fgTdlsInSecurityMode = TRUE;
@@ -3681,7 +3686,7 @@ static void TdlsEventTearDown(GLUE_INFO_T *prGlueInfo, UINT8 *prInBuf, UINT32 u4
 	/* 16 Nov 21:49 2012 http://permalink.gmane.org/gmane.linux.kernel.wireless.general/99712 */
 	cfg80211_tdls_oper_request(prStaRec->ucNetTypeIndex == NETWORK_TYPE_AIS_INDEX ?
 				   prGlueInfo->prDevHandler :
-				   prGlueInfo->prP2PInfo->prDevHandler,
+				   GLUE_P2P_NETDEV(prGlueInfo),
 				   prStaRec->aucMacAddr, NL80211_TDLS_TEARDOWN, u2ReasonCode, GFP_ATOMIC);
 }
 
@@ -4304,7 +4309,7 @@ TDLS_STATUS TdlsexKeyHandle(ADAPTER_T *prAdapter, PARAM_KEY_T *prNewKey, ENUM_NE
 			/* 16 Nov 21:49 2012 http://permalink.gmane.org/gmane.linux.kernel.wireless.general/99712 */
 			cfg80211_tdls_oper_request(eNetworkType == NETWORK_TYPE_AIS_INDEX ?
 						   prAdapter->prGlueInfo->prDevHandler :
-						   prAdapter->prGlueInfo->prP2PInfo->prDevHandler,
+						   GLUE_P2P_NETDEV(prAdapter->prGlueInfo),
 						   prStaRec->aucMacAddr, NL80211_TDLS_TEARDOWN,
 						   TDLS_REASON_CODE_UNSPECIFIED, GFP_ATOMIC);
 			return TDLS_STATUS_SUCCESS;
@@ -4529,7 +4534,7 @@ VOID
 MTKTdlsSetup(P_GLUE_INFO_T prGlueInfo, struct ksta_info *prSta)
 {
 	DBGLOG(TDLS, INFO, "Build up tdls link with %pM\n", prSta->aucAddr);
-	cfg80211_tdls_oper_request(prGlueInfo->prP2PInfo->prDevHandler,
+	cfg80211_tdls_oper_request(GLUE_P2P_NETDEV(prGlueInfo),
 				   prSta->aucAddr, NL80211_TDLS_SETUP, 0, GFP_ATOMIC);
 	prSta->eTdlsStatus = MTK_TDLS_SETUP_INPROCESS;
 	prSta->eTdlsRole = MTK_TDLS_ROLE_INITOR;
@@ -4547,7 +4552,7 @@ MTKTdlsTearDown(P_GLUE_INFO_T prGlueInfo, struct ksta_info *prSta, CHAR *reason)
 	DBGLOG(TDLS, INFO, "TDLS teardown due to %s\n", reason);
 
 	if (kalStrCmp(reason, "Disable Link"))
-		cfg80211_tdls_oper_request(prGlueInfo->prP2PInfo->prDevHandler,
+		cfg80211_tdls_oper_request(GLUE_P2P_NETDEV(prGlueInfo),
 				prSta->aucAddr, NL80211_TDLS_TEARDOWN, 0, GFP_ATOMIC);
 
 	prGlueInfo->prStaHash[STA_HASH_SIZE] = NULL;
@@ -4950,7 +4955,7 @@ TDLS_STATUS TdlsexPeerAdd(ADAPTER_T *prAdapter, VOID *pvSetBuffer, UINT_32 u4Set
 			/* 16 Nov 21:49 2012 http://permalink.gmane.org/gmane.linux.kernel.wireless.general/99712 */
 			cfg80211_tdls_oper_request(prCmd->eNetworkType == NETWORK_TYPE_AIS_INDEX ?
 							prAdapter->prGlueInfo->prDevHandler :
-							prAdapter->prGlueInfo->prP2PInfo->prDevHandler,
+							GLUE_P2P_NETDEV(prAdapter->prGlueInfo),
 						   prStaRec->aucMacAddr, NL80211_TDLS_TEARDOWN,
 						   TDLS_REASON_CODE_UNSPECIFIED, GFP_ATOMIC);
 
@@ -5292,7 +5297,7 @@ BOOLEAN TdlsexRxFrameDrop(GLUE_INFO_T *prGlueInfo, struct sk_buff *skb)
 		 * "No FTIE in TDLS Teardown" and it will not tear down the link
 		 */
 		cfg80211_tdls_oper_request(GLUE_GET_PKT_IS_P2P(skb) ?
-					prGlueInfo->prP2PInfo->prDevHandler :
+					GLUE_P2P_NETDEV(prGlueInfo) :
 					prGlueInfo->prDevHandler,
 					   pPkt + 6, NL80211_TDLS_TEARDOWN, *(pPkt + 13 + 4), GFP_ATOMIC);
 		/*
@@ -5637,7 +5642,7 @@ VOID TdlsexTxQuotaCheck(GLUE_INFO_T *prGlueInfo, STA_RECORD_T *prStaRec, UINT8 F
 			 */
 			cfg80211_tdls_oper_request(prStaRec->ucNetTypeIndex == NETWORK_TYPE_AIS_INDEX ?
 						   prGlueInfo->prDevHandler :
-						   prGlueInfo->prP2PInfo->prDevHandler,
+						   GLUE_P2P_NETDEV(prGlueInfo),
 						   prStaRec->aucMacAddr, NL80211_TDLS_TEARDOWN,
 						   TDLS_REASON_CODE_UNREACHABLE, GFP_ATOMIC);
 		}

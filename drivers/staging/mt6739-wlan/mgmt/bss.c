@@ -631,6 +631,7 @@ bssBuildBeaconProbeRespFrameCommonIEs(IN P_MSDU_INFO_T prMsduInfo, IN P_BSS_INFO
 	SSID_IE(pucBuffer)->ucId = ELEM_ID_SSID;
 	if ((!pucDestAddr) && (prBssInfo->eCurrentOPMode == OP_MODE_ACCESS_POINT)) {
 		/* For Beacon */
+#if CFG_ENABLE_WIFI_DIRECT
 		if (prBssInfo->eHiddenSsidType == ENUM_HIDDEN_SSID_ZERO_CONTENT) {
 			/* clear the data, but keep the correct length of the SSID */
 			SSID_IE(pucBuffer)->ucLength = prBssInfo->ucSSIDLen;
@@ -638,7 +639,9 @@ bssBuildBeaconProbeRespFrameCommonIEs(IN P_MSDU_INFO_T prMsduInfo, IN P_BSS_INFO
 		} else if (prBssInfo->eHiddenSsidType == ENUM_HIDDEN_SSID_ZERO_LEN) {
 			/* empty SSID */
 			SSID_IE(pucBuffer)->ucLength = 0;
-		} else {
+		} else
+#endif
+		{
 			SSID_IE(pucBuffer)->ucLength = prBssInfo->ucSSIDLen;
 			if (prBssInfo->ucSSIDLen)
 				kalMemCopy(SSID_IE(pucBuffer)->aucSSID, prBssInfo->aucSSID, prBssInfo->ucSSIDLen);

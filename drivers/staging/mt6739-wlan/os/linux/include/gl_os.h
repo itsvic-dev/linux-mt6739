@@ -306,14 +306,14 @@ typedef enum _ENUM_NET_REG_STATE_T {
 	ENUM_NET_REG_STATE_NUM
 } ENUM_NET_REG_STATE_T;
 
+#endif
+
 enum ENUM_WLAN_DRV_BUF_TYPE_T {
 	ENUM_BUF_TYPE_NVRAM,
 	ENUM_BUF_TYPE_DRV_CFG,
 	ENUM_BUF_TYPE_FW_CFG,
 	ENUM_BUF_TYPE_NUM
 };
-
-#endif
 
 typedef struct _GL_IO_REQ_T {
 	QUE_ENTRY_T rQueEntry;
@@ -882,6 +882,12 @@ struct wpa_driver_hs20_data_s {
 #define GLUE_GET_PKT_IS_P2P(_p)        \
 	((*((PUINT_8)&(((struct sk_buff *)(_p))->cb[GLUE_CB_OFFSET+4]))) & (BIT(4)))
 
+#if CFG_ENABLE_WIFI_DIRECT
+#define GLUE_P2P_NETDEV(_prGlueInfo)	((_prGlueInfo)->prP2PInfo->prDevHandler)
+#else
+#define GLUE_P2P_NETDEV(_prGlueInfo)	((struct net_device *)NULL)
+#endif
+
 #define GLUE_SET_PKT_HEADER_LEN(_p, _ucMacHeaderLen)    \
 	(*((PUINT_8)&(((struct sk_buff *)(_p))->cb[GLUE_CB_OFFSET+5])) = (UINT_8)(_ucMacHeaderLen))
 
@@ -939,6 +945,10 @@ BOOLEAN glRegisterAmpc(P_GLUE_INFO_T prGlueInfo);
 BOOLEAN glUnregisterAmpc(P_GLUE_INFO_T prGlueInfo);
 #endif
 
+BOOLEAN wlanExportGlueInfo(P_GLUE_INFO_T *prGlueInfoExpAddr);
+
+VOID wlanUpdateChannelTable(P_GLUE_INFO_T prGlueInfo);
+
 #if CFG_ENABLE_WIFI_DIRECT
 
 VOID wlanSubModRunInit(P_GLUE_INFO_T prGlueInfo);
@@ -952,11 +962,7 @@ BOOLEAN wlanSubModExit(P_GLUE_INFO_T prGlueInfo);
 VOID
 wlanSubModRegisterInitExit(SUB_MODULE_INIT rSubModInit, SUB_MODULE_EXIT rSubModExit, ENUM_SUB_MODULE_IDX_T eSubModIdx);
 
-BOOLEAN wlanExportGlueInfo(P_GLUE_INFO_T *prGlueInfoExpAddr);
-
 BOOLEAN wlanIsLaunched(VOID);
-
-VOID wlanUpdateChannelTable(P_GLUE_INFO_T prGlueInfo);
 
 #endif
 

@@ -488,6 +488,20 @@ VOID wlanDbgSetLogLevelImpl(IN P_ADAPTER_T prAdapter, UINT_32 u4Version,
 		UINT_32 u4Module, UINT_32 u4level);
 VOID wlanDbgLevelSync(VOID);
 
+#if !CFG_ENABLE_WIFI_DIRECT
+#if DBG
+#define ASSERT_BREAK(_exp) \
+	{ \
+	    if (!(_exp)) { \
+		ASSERT(FALSE); \
+		break; \
+	    } \
+	}
+#else
+#define ASSERT_BREAK(_exp)
+#endif
+#endif
+
 /*******************************************************************************
 *                              F U N C T I O N S
 ********************************************************************************

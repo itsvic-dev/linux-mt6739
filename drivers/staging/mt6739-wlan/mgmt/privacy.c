@@ -855,11 +855,13 @@ enum ENUM_EAPOL_KEY_TYPE_T secGetEapolKeyType(PUINT_8 pucPkt)
 VOID secHandleTxStatus(ADAPTER_T *prAdapter, UINT_8 *pucEvtBuf)
 {
 	STATS_TX_PKT_DONE_INFO_DISPLAY(prAdapter, pucEvtBuf);
-#if CFG_SUPPORT_P2P_EAP_FAIL_WORKAROUND
+#if CFG_SUPPORT_P2P_EAP_FAIL_WORKAROUND && CFG_ENABLE_WIFI_DIRECT
 	p2pFuncEAPfailureWorkaround(prAdapter, pucEvtBuf);
 #endif
 	secHandleEapolTxStatus(prAdapter, pucEvtBuf);
+#if CFG_ENABLE_WIFI_DIRECT
 	p2pFsmNotifyTxStatus(prAdapter, pucEvtBuf);
+#endif
 }
 
 VOID secHandleRxEapolPacket(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prRetSwRfb,

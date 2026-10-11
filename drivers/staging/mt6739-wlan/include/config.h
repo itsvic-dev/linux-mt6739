@@ -576,15 +576,7 @@
  *------------------------------------------------------------------------------
  */
 
-#ifdef LINUX
-#ifdef CONFIG_X86
 #define CFG_ENABLE_BT_OVER_WIFI         0
-#else
-#define CFG_ENABLE_BT_OVER_WIFI         1
-#endif
-#else
-#define CFG_ENABLE_BT_OVER_WIFI             0
-#endif
 
 #define CFG_BOW_SEPARATE_DATA_PATH              1
 
@@ -602,18 +594,8 @@
  * Flags of Wi-Fi Direct support
  *------------------------------------------------------------------------------
  */
-#ifdef LINUX
-#ifdef CONFIG_X86
 #define CFG_ENABLE_WIFI_DIRECT          0
-#define CFG_SUPPORT_802_11W             0
-#else
-#define CFG_ENABLE_WIFI_DIRECT          1
 #define CFG_SUPPORT_802_11W             1
-#endif
-#else
-#define CFG_ENABLE_WIFI_DIRECT              0
-#define CFG_SUPPORT_802_11W                 0	/* Not support at WinXP */
-#endif
 
 #define CFG_SUPPORT_PERSISTENT_GROUP     0
 

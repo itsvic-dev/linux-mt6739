@@ -2053,6 +2053,7 @@ VOID scanReportBss2Cfg80211(IN P_ADAPTER_T prAdapter, IN ENUM_BSS_TYPE_T eBSSTyp
 					prSpecificBssDesc->ucChannelNum,
 					RCPI_TO_dBm(prSpecificBssDesc->ucRCPI));
 		} else {
+#if CFG_ENABLE_WIFI_DIRECT
 
 #if P2P_INDICATE_COMPLETE_BSS_INFO
 			kalP2PIndicateCompleteBssInfo(prAdapter->prGlueInfo, prSpecificBssDesc);
@@ -2064,6 +2065,7 @@ VOID scanReportBss2Cfg80211(IN P_ADAPTER_T prAdapter, IN ENUM_BSS_TYPE_T eBSSTyp
 				prSpecificBssDesc->u2RawLength,
 				&rChannelInfo,
 				RCPI_TO_dBm(prSpecificBssDesc->ucRCPI));
+#endif
 #endif
 		}
 
@@ -2120,7 +2122,11 @@ VOID scanReportBss2Cfg80211(IN P_ADAPTER_T prAdapter, IN ENUM_BSS_TYPE_T eBSSTyp
 						prBssDesc->eBSSType,
 						prBssDesc->fgIsValidSSID,
 						prBssDesc->u2RawLength,
+#if CFG_ENABLE_WIFI_DIRECT
 						prBssDesc->fgIsP2PReport);
+#else
+						0);
+#endif
 #undef TEMP_LOG_TEMPLATE
 
 				if (eBSSType == BSS_TYPE_INFRASTRUCTURE) {
@@ -2141,7 +2147,6 @@ VOID scanReportBss2Cfg80211(IN P_ADAPTER_T prAdapter, IN ENUM_BSS_TYPE_T eBSSTyp
 				} else {
 #if CFG_ENABLE_WIFI_DIRECT
 					if (prBssDesc->fgIsP2PReport == TRUE) {
-#endif
 						rChannelInfo.ucChannelNum = prBssDesc->ucChannelNum;
 						rChannelInfo.eBand = prBssDesc->eBand;
 						kalP2PIndicateBssInfo(prAdapter->prGlueInfo,
@@ -2157,7 +2162,6 @@ VOID scanReportBss2Cfg80211(IN P_ADAPTER_T prAdapter, IN ENUM_BSS_TYPE_T eBSSTyp
 						 * pass it. We use u2RawLength for the purpose.
 						 */
 						/* prBssDesc->u2RawLength=0; */
-#if CFG_ENABLE_WIFI_DIRECT
 						prBssDesc->fgIsP2PReport = FALSE;
 					}
 #endif

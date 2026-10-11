@@ -1423,7 +1423,9 @@ WLAN_STATUS nicUpdateBss(IN P_ADAPTER_T prAdapter, IN ENUM_NETWORK_TYPE_INDEX_T 
 	rCmdSetBssInfo.u2OperationalRateSet = prBssInfo->u2OperationalRateSet;
 	rCmdSetBssInfo.u2BSSBasicRateSet = prBssInfo->u2BSSBasicRateSet;
 	rCmdSetBssInfo.ucPhyTypeSet = prBssInfo->ucPhyTypeSet;
+#if CFG_ENABLE_WIFI_DIRECT
 	rCmdSetBssInfo.fgHiddenSsidMode = prBssInfo->eHiddenSsidType;
+#endif
 #if CFG_ENABLE_WIFI_DIRECT
 	if (prAdapter->fgIsP2PRegistered
 		|| prBssInfo->eCurrentOPMode == OP_MODE_P2P_DEVICE)
@@ -2102,6 +2104,7 @@ WLAN_STATUS nicSetUApsdParam(IN P_ADAPTER_T prAdapter,
 			(PUINT_8)&rCmdUapsdParam, NULL, 0);
 			break;
 
+#if CFG_ENABLE_WIFI_DIRECT
 	case NETWORK_TYPE_P2P_INDEX:
 		ret = wlanoidSendSetQueryP2PCmd(prAdapter,
 			CMD_ID_SET_UAPSD_PARAM,
@@ -2113,6 +2116,7 @@ WLAN_STATUS nicSetUApsdParam(IN P_ADAPTER_T prAdapter,
 			sizeof(CMD_CUSTOM_UAPSD_PARAM_STRUCT_T),
 			(PUINT_8)&rCmdUapsdParam, NULL, 0);
 			break;
+#endif
 
 	default:
 		ret = WLAN_STATUS_FAILURE;

@@ -878,10 +878,12 @@ INT32 wlan_get_link_mode(void)
 {
 	UINT_8 ucLinkMode = 0;
 	P_ADAPTER_T prAdapter;
-	BOOLEAN fgIsAPmode;
+	BOOLEAN fgIsAPmode = FALSE;
 
 	prAdapter = g_prGlueInfo_proc->prAdapter;
+#if CFG_ENABLE_WIFI_DIRECT
 	fgIsAPmode = p2pFuncIsAPMode(prAdapter->rWifiVar.prP2pFsmInfo);
+#endif
 
 	DBGLOG(RLM, TRACE, "PROC %s AIS(%d)P2P(%d)AP(%d)\n",
 			   __func__,

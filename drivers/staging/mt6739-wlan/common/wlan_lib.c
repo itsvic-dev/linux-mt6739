@@ -4441,8 +4441,10 @@ P_BSS_DESC_T wlanGetTargetBssDescByNetwork(IN P_ADAPTER_T prAdapter, IN ENUM_NET
 	case NETWORK_TYPE_P2P_INDEX:
 		return NULL;
 
+#if CFG_ENABLE_BT_OVER_WIFI
 	case NETWORK_TYPE_BOW_INDEX:
 		return prAdapter->rWifiVar.rBowFsmInfo.prTargetBssDesc;
+#endif
 
 	default:
 		return NULL;

@@ -4505,8 +4505,10 @@ VOID kalPerMonDump(IN P_GLUE_INFO_T prGlueInfo)
 	DBGLOG(SW4, WARN, "u4CurrPerfLevel:%d\n", prPerMonitor->u4CurrPerfLevel);
 	DBGLOG(SW4, WARN, "netStats tx_bytes:%ld\n", prGlueInfo->rNetDevStats.tx_bytes);
 	DBGLOG(SW4, WARN, "netStats tx_bytes:%ld\n", prGlueInfo->rNetDevStats.rx_bytes);
+#if CFG_ENABLE_WIFI_DIRECT
 	DBGLOG(SW4, WARN, "p2p netStats tx_bytes:%ld\n", prGlueInfo->prP2PInfo->rNetDevStats.tx_bytes);
 	DBGLOG(SW4, WARN, "p2p netStats tx_bytes:%ld\n", prGlueInfo->prP2PInfo->rNetDevStats.rx_bytes);
+#endif
 }
 
 inline INT_32 kalPerMonInit(IN P_GLUE_INFO_T prGlueInfo)
@@ -4639,6 +4641,7 @@ inline INT_32 kalPerMonDestroy(IN P_GLUE_INFO_T prGlueInfo)
 
 VOID kalPerMonHandler(IN P_ADAPTER_T prAdapter, ULONG ulParam)
 {
+#if CFG_ENABLE_WIFI_DIRECT
 	/* Calculate current throughput */
 	struct PERF_MONITOR_T *prPerMonitor;
 	struct net_device *prNetDev = NULL;
@@ -4771,6 +4774,7 @@ VOID kalPerMonHandler(IN P_ADAPTER_T prAdapter, ULONG ulParam)
 	}
 
 	DBGLOG(SW4, TRACE, "exit kalPerMonHandler\n");
+#endif
 }
 
 INT32 __weak kalBoostCpu(P_GLUE_INFO_T prGlueInfo, UINT_32 core_num)

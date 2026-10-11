@@ -304,7 +304,7 @@ do { \
 		if (eNetworkType == NETWORK_TYPE_AIS_INDEX)
 			prMsduInfo->dev = prGlueInfo->prDevHandler;
 		else
-			prMsduInfo->dev = prGlueInfo->prP2PInfo->prDevHandler;
+			prMsduInfo->dev = GLUE_P2P_NETDEV(prGlueInfo);
 
 		if (prMsduInfo->dev == NULL) {
 			DBGLOG(TDLS, ERROR, "<tdls_cmd> %s: MsduInfo->dev == NULL\n", __func__);

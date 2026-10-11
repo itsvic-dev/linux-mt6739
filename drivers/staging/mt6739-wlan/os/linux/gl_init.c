@@ -958,6 +958,8 @@ BOOLEAN wlanIsLaunched(VOID)
 
 #endif
 
+#endif
+
 /*----------------------------------------------------------------------------*/
 /*!
 * \brief Export wlan GLUE_INFO_T pointer to p2p module
@@ -990,8 +992,6 @@ BOOLEAN wlanExportGlueInfo(P_GLUE_INFO_T *prGlueInfoExpAddr)
 	*prGlueInfoExpAddr = prGlueInfo;
 	return TRUE;
 }
-
-#endif
 
 /*----------------------------------------------------------------------------*/
 /*!
@@ -2451,6 +2451,7 @@ notify_resume:
 }
 #endif /* ! CONFIG_X86 */
 
+#if CFG_ENABLE_WIFI_DIRECT
 int set_p2p_mode_handler(struct net_device *netdev, PARAM_CUSTOM_P2P_SET_STRUCT_T p2pmode)
 {
 #if 0
@@ -2553,6 +2554,7 @@ int set_p2p_mode_handler(struct net_device *netdev, PARAM_CUSTOM_P2P_SET_STRUCT_
 	return 0;
 #endif
 }
+#endif
 
 #if CFG_TC10_FEATURE
 static int readMac(char *file, char *buf, unsigned int bsize)
@@ -3248,11 +3250,10 @@ bailout:
 		glRegisterAmpc(prGlueInfo);
 #endif
 
+		prGlueInfo->prAdapter->fgIsWlanLaunched = TRUE;
 #if CFG_ENABLE_WIFI_DIRECT
 		DBGLOG(INIT, TRACE, "wlanSubModInit...\n");
 
-		/* wlan is launched */
-		prGlueInfo->prAdapter->fgIsWlanLaunched = TRUE;
 		/* if p2p module is inserted, notify tx_thread to init p2p network */
 		if (rSubModHandler[P2P_MODULE].subModInit)
 			wlanSubModInit(prGlueInfo);
@@ -3421,8 +3422,10 @@ static VOID wlanRemove(VOID)
 		DBGLOG(INIT, ERROR, "0 == u4WlanDevNum\n");
 		return;
 	}
+#if CFG_ENABLE_WIFI_DIRECT
 	/* unregister set_p2p_mode handler to mtk_wmt_wifi */
 	register_set_p2p_mode_handler(NULL);
+#endif
 
 	prDev = arWlanDevInfo[u4WlanDevNum - 1].prDev;
 	prWlandevInfo = &arWlanDevInfo[u4WlanDevNum - 1];
@@ -3625,15 +3628,19 @@ static int initWlan(void)
 
 	DBGLOG(INIT, INFO, "initWlan\n");
 
+#if CFG_ENABLE_WIFI_DIRECT
 	spin_lock_init(&g_p2p_lock);
+#endif
 
 	fgNvramAvailable = FALSE;
 	/* memory pre-allocation */
 	kalInitIOBuffer();
 	procInitFs();
 	createWirelessDevice();
+#if CFG_ENABLE_WIFI_DIRECT
 	if (gprWdev)
 		glP2pCreateWirelessDevice((P_GLUE_INFO_T) wiphy_priv(gprWdev->wiphy));
+#endif
 	gPrDev = NULL;
 
 	ret = ((glRegisterBus(wlanProbe, wlanRemove) == WLAN_STATUS_SUCCESS) ? 0 : -EIO);
@@ -3679,7 +3686,9 @@ static VOID exitWlan(void)
 	glResetUninit();
 #endif
 	destroyWirelessDevice();
+#if CFG_ENABLE_WIFI_DIRECT
 	glP2pDestroyWirelessDevice();
+#endif
 
 	glUnregisterBus(wlanRemove);
 

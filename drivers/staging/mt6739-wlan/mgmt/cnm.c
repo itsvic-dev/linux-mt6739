@@ -545,8 +545,10 @@ BOOLEAN cnmBss40mBwPermitted(P_ADAPTER_T prAdapter, ENUM_NETWORK_TYPE_INDEX_T eN
 
 	if (eNetTypeIdx == NETWORK_TYPE_AIS_INDEX)
 		prBssDesc = prAdapter->rWifiVar.rAisFsmInfo.prTargetBssDesc;
+#if CFG_ENABLE_WIFI_DIRECT
 	else if ((eNetTypeIdx == NETWORK_TYPE_P2P_INDEX) && (prAdapter->rWifiVar.prP2pFsmInfo))
 		prBssDesc = prAdapter->rWifiVar.prP2pFsmInfo->prTargetBss;
+#endif
 	if (prBssDesc) {
 #if CFG_SUPPORT_CFG_FILE
 		if (prWifiVar->ucCert11nMode == 1) {

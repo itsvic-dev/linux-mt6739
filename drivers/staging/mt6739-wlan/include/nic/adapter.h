@@ -836,10 +836,10 @@ struct _ADAPTER_T {
 	/* WLAN Info for DRIVER_CORE OID query */
 	WLAN_INFO_T rWlanInfo;
 
-#if CFG_ENABLE_WIFI_DIRECT
 	BOOLEAN fgIsP2PRegistered;
-	ENUM_NET_REG_STATE_T rP2PNetRegState;
 	BOOLEAN fgIsWlanLaunched;
+#if CFG_ENABLE_WIFI_DIRECT
+	ENUM_NET_REG_STATE_T rP2PNetRegState;
 	P_P2P_INFO_T prP2pInfo;
 #if CFG_SUPPORT_P2P_RSSI_QUERY
 	OS_SYSTIME rP2pLinkQualityUpdateTime;
