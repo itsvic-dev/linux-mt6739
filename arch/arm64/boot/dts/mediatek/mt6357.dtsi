@@ -255,7 +255,7 @@
 			};
 		};
 
-		rtc {
+		mt6357_rtc: rtc {
 			compatible = "mediatek,mt6357-rtc";
 		};
 
