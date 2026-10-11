@@ -399,6 +399,8 @@ extern const struct pvr_fw_defs pvr_fw_defs_riscv;
 
 int pvr_fw_validate_init_device_info(struct pvr_device *pvr_dev);
 int pvr_fw_init(struct pvr_device *pvr_dev);
+int pvr_fw_process(struct pvr_device *pvr_dev);
+void pvr_fw_cleanup(struct pvr_device *pvr_dev);
 void pvr_fw_fini(struct pvr_device *pvr_dev);
 
 int pvr_wait_for_fw_boot(struct pvr_device *pvr_dev);

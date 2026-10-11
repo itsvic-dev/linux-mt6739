@@ -627,7 +627,7 @@ pvr_fw_destroy_structures(struct pvr_device *pvr_dev)
  *  * Any error returned by pvr_fw_object_create_and_map_offset(), or
  *  * Any error returned by pvr_fw_object_create_and_map().
  */
-static int
+int
 pvr_fw_process(struct pvr_device *pvr_dev)
 {
 	struct drm_device *drm_dev = from_pvr_device(pvr_dev);
@@ -837,7 +837,7 @@ pvr_fw_reinit_code_data(struct pvr_device *pvr_dev)
 	return 0;
 }
 
-static void
+void
 pvr_fw_cleanup(struct pvr_device *pvr_dev)
 {
 	struct pvr_fw_mem *fw_mem = &pvr_dev->fw_dev.mem;
