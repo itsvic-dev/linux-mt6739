@@ -24,7 +24,7 @@
 #ifdef FW_CFG_SUPPORT
 #include "fwcfg.h"
 #endif
-#include <stddef.h>
+#include <linux/stddef.h>
 
 /******************************************************************************
 *                              C O N S T A N T S
