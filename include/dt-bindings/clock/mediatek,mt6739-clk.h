@@ -170,4 +170,18 @@
 #define CLK_TOP_AO_MCU_SEL		0
 #define CLK_TOP_AO_NR_CLK		1
 
+/* AUDIOSYS */
+#define CLK_AUDIO_AFE			0
+#define CLK_AUDIO_22M			1
+#define CLK_AUDIO_APLL_TUNER		2
+#define CLK_AUDIO_ADC			3
+#define CLK_AUDIO_DAC			4
+#define CLK_AUDIO_DAC_PREDIS		5
+#define CLK_AUDIO_TML			6
+#define CLK_AUDIO_I2S1_BCLK		7
+#define CLK_AUDIO_I2S2_BCLK		8
+#define CLK_AUDIO_I2S3_BCLK		9
+#define CLK_AUDIO_I2S4_BCLK		10
+#define CLK_AUDIO_NR_CLK		11
+
 #endif /* _DT_BINDINGS_CLK_MEDIATEK_MT6739_H */
