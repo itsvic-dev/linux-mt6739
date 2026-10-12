@@ -183,9 +183,15 @@ void pvr_ddk19_init_device_info(struct pvr_device *pvr_dev)
 	pvr_dev->fw_dev.layout_entries = ddk19_layout;
 
 	f->has_axi_acelite = true;
+	f->has_common_store_size_in_dwords = true;
+	f->common_store_size_in_dwords = 1024 * 4 * 4;
 	f->has_compute = true;
 	f->has_gpu_virtualisation = true;
 	f->has_gs_rta_support = true;
+	f->has_isp_samples_per_pixel = true;
+	f->isp_samples_per_pixel = 1;
+	f->has_max_partitions = true;
+	f->max_partitions = 10;
 	f->has_mips = true;
 	f->has_num_clusters = true;
 	f->num_clusters = 1;
@@ -209,6 +215,12 @@ void pvr_ddk19_init_device_info(struct pvr_device *pvr_dev)
 	f->has_slc_size_in_kilobytes = true;
 	f->slc_size_in_kilobytes = 8;
 	f->has_sys_bus_secure_reset = true;
+	f->has_tile_size_x = true;
+	f->tile_size_x = 16;
+	f->has_tile_size_y = true;
+	f->tile_size_y = 16;
+	f->has_usc_min_output_registers_per_pix = true;
+	f->usc_min_output_registers_per_pix = 2;
 	f->has_virtual_address_space_bits = true;
 	f->virtual_address_space_bits = 40;
 
