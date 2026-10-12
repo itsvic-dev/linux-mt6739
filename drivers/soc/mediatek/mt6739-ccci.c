@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* MT6739 MD1 modem power-on and CCCI handshake. */
 
+#include <linux/bitfield.h>
 #include <linux/clk.h>
 #include <linux/debugfs.h>
 #include <linux/delay.h>
+#include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
+#include <linux/if_arp.h>
 #include <linux/miscdevice.h>
+#include <linux/netdevice.h>
 #include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -36,6 +40,7 @@
 #define CCIF_CH_EXCEPTION	16
 #define CCIF_CH_EX_CLEARQ	17
 #define CCIF_CH_EX_CLEARQ_DONE	18
+#define CCIF_CH_PEER_WAKEUP	20
 #define CCIF_RINGQ_NUM		8
 
 #define MD_FEATURE_PATTERN	0x49434343
@@ -176,6 +181,43 @@ enum {
 #define DVFSRC_MD_SRCLKENA	0x18
 #define DVFSRC_MD_SRCLKENA_EN	(3 << 26)
 
+#define CLDMA_AO_UL_START_BK(q)	(0x004 + 4 * (q))
+#define CLDMA_AO_UL_START_BK_MSB	0x014
+#define CLDMA_AO_SO_START	0x404
+#define CLDMA_AO_SO_START_MSB	0x40c
+#define CLDMA_AO_SO_STATUS	0x414
+#define CLDMA_AO_L2RIMCR0	0x804
+#define CLDMA_AO_L2RIMSR0	0x808
+#define CLDMA_UL_START(q)	(0x000 + 4 * (q))
+#define CLDMA_UL_START_MSB	0x010
+#define CLDMA_UL_STATUS		0x028
+#define CLDMA_UL_START_CMD	0x030
+#define CLDMA_UL_RESUME_CMD	0x034
+#define CLDMA_SO_START_CMD	0x404
+#define CLDMA_SO_RESUME_CMD	0x408
+#define CLDMA_L2TISAR0		0x800
+#define CLDMA_L2TIMR0		0x804
+#define CLDMA_L2TIMCR0		0x808
+#define CLDMA_L3TIMCR0		0x820
+#define CLDMA_L3TIMCR1		0x824
+#define CLDMA_L2RISAR0		0x830
+#define CLDMA_L3RIMCR0		0x848
+#define CLDMA_L3RIMCR1		0x84c
+#define CLDMA_IP_BUSY		0x860
+#define CLDMA_TX_ERROR		GENMASK(11, 8)
+#define CLDMA_RX_DONE		BIT(0)
+#define CLDMA_RX_EMPTY		BIT(8)
+#define CLDMA_RX_ERROR		BIT(16)
+#define CLDMA_TXQ		4
+#define CLDMA_TX_LEN		64
+#define CLDMA_RX_LEN		128
+#define CLDMA_BUF		3584
+#define GPD_HWO			BIT(0)
+#define GPD_IOC			BIT(7)
+#define LHIF_HDR		4
+#define LHIF_NETIF		GENMASK(4, 0)
+#define CCMNI_LINKS		8
+#define LHIF_HWQ_AP_UL_Q1	3
 #define CLDMA_SO_CFG		0x400
 #define CLDMA_SO_CFG_EN		BIT(0)
 #define CLDMA_DL_MTU		0x418
@@ -247,6 +289,33 @@ struct ap_query_md_feature {
 	u32 tail;
 } __packed;
 
+struct cldma_tgpd {
+	u8 flags;
+	u8 debug;
+	u8 msb;
+	u8 netif;
+	__le32 next;
+	__le32 buf;
+	__le16 len;
+	__le16 psn;
+} __packed;
+
+struct cldma_rgpd {
+	u8 flags;
+	u8 reserved;
+	__le16 allow_len;
+	__le32 next;
+	__le32 buf;
+	__le16 len;
+	u8 msb;
+	u8 reserved2;
+} __packed;
+
+struct ccmni_link {
+	struct mt6739_ccci *md;
+	u32 id;
+};
+
 struct ccci_ring_ctl {
 	u32 read;
 	u32 write;
@@ -317,6 +386,7 @@ static struct mt6739_ccci_port mt6739_ccci_ports[] = {
 struct mt6739_ccci {
 	struct device *dev;
 	void __iomem *cldma_ao;
+	void __iomem *cldma_pdn;
 	void __iomem *ap_ccif;
 	void __iomem *md_ccif;
 	void __iomem *boot_stats;
@@ -351,6 +421,22 @@ struct mt6739_ccci {
 	bool started;
 	bool ready;
 	struct wwan_port *at_port;
+	int cldma_irq;
+	spinlock_t cldma_lock;
+	void *gpd_mem;
+	dma_addr_t gpd_dma;
+	struct cldma_rgpd *rgpd;
+	struct sk_buff *rx_skb[CLDMA_RX_LEN];
+	dma_addr_t rx_addr[CLDMA_RX_LEN];
+	unsigned int rx_next;
+	struct cldma_tgpd *tgpd[CLDMA_TXQ];
+	struct sk_buff *tx_skb[CLDMA_TXQ][CLDMA_TX_LEN];
+	dma_addr_t tx_addr[CLDMA_TXQ][CLDMA_TX_LEN];
+	unsigned int tx_head[CLDMA_TXQ];
+	unsigned int tx_tail[CLDMA_TXQ];
+	bool tx_started;
+	struct net_device *netdev[CCMNI_LINKS];
+	u8 link_txq[CCMNI_LINKS];
 	struct dentry *debugfs;
 };
 
@@ -572,6 +658,10 @@ static void mt6739_ccci_rpc(struct mt6739_ccci *md, int q, u8 *pkt, u32 n)
 		dev_info(md->dev, "RPC GPIO/ADC (input %u bytes): not available\n", arg_len[0]);
 		break;
 	case RPC_LHIF_MAPPING:
+		if (arg_len[0] >= 8 && get_unaligned_le32(arg[0]) < CCMNI_LINKS)
+			md->link_txq[get_unaligned_le32(arg[0])] =
+				get_unaligned_le32(arg[0] + 4) == LHIF_HWQ_AP_UL_Q1 ? 3 : 0;
+		fallthrough;
 	case RPC_USIM2NFC:
 		err[0] = 0;
 		mt6739_ccci_rpc_put(&p, &nout, err, 4);
@@ -653,6 +743,332 @@ static const struct wwan_port_ops mt6739_ccci_at_ops = {
 	.start = mt6739_ccci_at_start,
 	.stop = mt6739_ccci_at_stop,
 	.tx = mt6739_ccci_at_tx,
+};
+
+static int mt6739_ccci_rx_refill(struct mt6739_ccci *md, unsigned int i)
+{
+	struct cldma_rgpd *g = &md->rgpd[i];
+	struct sk_buff *skb;
+	dma_addr_t addr;
+
+	skb = __netdev_alloc_skb(NULL, CLDMA_BUF, GFP_KERNEL);
+	if (!skb)
+		return -ENOMEM;
+	addr = dma_map_single(md->dev, skb->data, CLDMA_BUF, DMA_FROM_DEVICE);
+	if (dma_mapping_error(md->dev, addr)) {
+		dev_kfree_skb(skb);
+		return -ENOMEM;
+	}
+	md->rx_skb[i] = skb;
+	md->rx_addr[i] = addr;
+	g->buf = cpu_to_le32(addr);
+	g->len = 0;
+	dma_wmb();
+	WRITE_ONCE(g->flags, GPD_IOC | GPD_HWO);
+	return 0;
+}
+
+static int mt6739_ccci_cldma_init(struct mt6739_ccci *md)
+{
+	dma_addr_t tx_dma, rx_dma = md->gpd_dma;
+	unsigned int q, i;
+	int ret;
+
+	md->rgpd = md->gpd_mem;
+	for (i = 0; i < CLDMA_RX_LEN; i++) {
+		md->rgpd[i] = (struct cldma_rgpd) {
+			.allow_len = cpu_to_le16(CLDMA_BUF),
+			.next = cpu_to_le32(rx_dma + ((i + 1) % CLDMA_RX_LEN) * sizeof(struct cldma_rgpd)),
+		};
+		ret = mt6739_ccci_rx_refill(md, i);
+		if (ret)
+			return ret;
+	}
+	md->rx_next = 0;
+
+	for (q = 0; q < CLDMA_TXQ; q++) {
+		md->tgpd[q] = md->gpd_mem + (CLDMA_RX_LEN + q * CLDMA_TX_LEN) * sizeof(struct cldma_tgpd);
+		tx_dma = md->gpd_dma + (CLDMA_RX_LEN + q * CLDMA_TX_LEN) * sizeof(struct cldma_tgpd);
+		for (i = 0; i < CLDMA_TX_LEN; i++)
+			md->tgpd[q][i] = (struct cldma_tgpd) {
+				.flags = GPD_IOC,
+				.next = cpu_to_le32(tx_dma + ((i + 1) % CLDMA_TX_LEN) *
+						    sizeof(struct cldma_tgpd)),
+			};
+		md->tx_head[q] = 0;
+		md->tx_tail[q] = 0;
+	}
+	md->tx_started = false;
+	return 0;
+}
+
+static dma_addr_t mt6739_ccci_tgpd_dma(struct mt6739_ccci *md, unsigned int q)
+{
+	return md->gpd_dma + (CLDMA_RX_LEN + q * CLDMA_TX_LEN) * sizeof(struct cldma_tgpd);
+}
+
+static void mt6739_ccci_cldma_start(struct mt6739_ccci *md)
+{
+	void __iomem *ao = md->cldma_ao, *pdn = md->cldma_pdn;
+	unsigned int q;
+
+	for (q = 0; q < CLDMA_TXQ; q++) {
+		writel(mt6739_ccci_tgpd_dma(md, q), pdn + CLDMA_UL_START(q));
+		writel(mt6739_ccci_tgpd_dma(md, q), ao + CLDMA_AO_UL_START_BK(q));
+	}
+	writel(0, pdn + CLDMA_UL_START_MSB);
+	writel(0, ao + CLDMA_AO_UL_START_BK_MSB);
+	writel(md->gpd_dma, ao + CLDMA_AO_SO_START);
+	writel(0, ao + CLDMA_AO_SO_START_MSB);
+	wmb();
+	writel(0xf, pdn + CLDMA_SO_START_CMD);
+	readl(pdn + CLDMA_SO_START_CMD);
+	writel(0xfff, pdn + CLDMA_L2TIMCR0);
+	/* On 6293 the AO RX mask set/clear registers act as plain registers. */
+	writel(readl(ao + CLDMA_AO_L2RIMSR0) & ~0x7, ao + CLDMA_AO_L2RIMSR0);
+	writel(0x7, ao + CLDMA_AO_L2RIMCR0);
+	writel(~0, pdn + CLDMA_L3TIMCR0);
+	writel(~0, pdn + CLDMA_L3TIMCR1);
+	writel(~0, pdn + CLDMA_L3RIMCR0);
+	writel(~0, pdn + CLDMA_L3RIMCR1);
+	enable_irq(md->cldma_irq);
+}
+
+static void mt6739_ccci_net_rx(struct mt6739_ccci *md, struct sk_buff *skb)
+{
+	struct net_device *ndev;
+	u8 netif;
+
+	if (skb->len <= LHIF_HDR) {
+		dev_kfree_skb(skb);
+		return;
+	}
+	netif = FIELD_GET(LHIF_NETIF, skb->data[3]);
+	ndev = netif < CCMNI_LINKS ? md->netdev[netif] : NULL;
+	skb_pull(skb, LHIF_HDR);
+	if (!ndev || !netif_running(ndev)) {
+		dev_dbg_ratelimited(md->dev, "RX for ccmni%u dropped (%u bytes)\n", netif, skb->len);
+		dev_kfree_skb(skb);
+		return;
+	}
+	switch (skb->data[0] & 0xf0) {
+	case 0x40:
+		skb->protocol = htons(ETH_P_IP);
+		break;
+	case 0x60:
+		skb->protocol = htons(ETH_P_IPV6);
+		break;
+	default:
+		ndev->stats.rx_errors++;
+		dev_kfree_skb(skb);
+		return;
+	}
+	skb->dev = ndev;
+	skb_reset_network_header(skb);
+	ndev->stats.rx_packets++;
+	ndev->stats.rx_bytes += skb->len;
+	netif_rx(skb);
+}
+
+static void mt6739_ccci_rx_collect(struct mt6739_ccci *md)
+{
+	unsigned int budget = CLDMA_RX_LEN;
+
+	while (budget--) {
+		unsigned int i = md->rx_next;
+		struct cldma_rgpd *g = &md->rgpd[i];
+		struct sk_buff *skb = md->rx_skb[i];
+		dma_addr_t addr = md->rx_addr[i];
+		unsigned int len;
+
+		if (READ_ONCE(g->flags) & GPD_HWO)
+			break;
+		dma_rmb();
+		len = min_t(unsigned int, le16_to_cpu(g->len), CLDMA_BUF);
+		if (mt6739_ccci_rx_refill(md, i)) {
+			/* Keep the old buffer and give it back to the hardware. */
+			g->len = 0;
+			dma_wmb();
+			WRITE_ONCE(g->flags, GPD_IOC | GPD_HWO);
+		} else {
+			dma_unmap_single(md->dev, addr, CLDMA_BUF, DMA_FROM_DEVICE);
+			skb_put(skb, len);
+			mt6739_ccci_net_rx(md, skb);
+		}
+		md->rx_next = (i + 1) % CLDMA_RX_LEN;
+	}
+	if (!(readl(md->cldma_ao + CLDMA_AO_SO_STATUS) & BIT(0)))
+		writel(BIT(0), md->cldma_pdn + CLDMA_SO_RESUME_CMD);
+}
+
+static void mt6739_ccci_tx_done(struct mt6739_ccci *md, unsigned int q)
+{
+	unsigned int i, l;
+
+	spin_lock_bh(&md->cldma_lock);
+	for (;;) {
+		struct sk_buff *skb;
+
+		i = md->tx_tail[q];
+		skb = md->tx_skb[q][i];
+		if (!skb || (READ_ONCE(md->tgpd[q][i].flags) & GPD_HWO))
+			break;
+		dma_unmap_single(md->dev, md->tx_addr[q][i], skb->len, DMA_TO_DEVICE);
+		md->tx_skb[q][i] = NULL;
+		md->tx_tail[q] = (i + 1) % CLDMA_TX_LEN;
+		dev_consume_skb_any(skb);
+	}
+	if (md->tx_skb[q][md->tx_tail[q]] &&
+	    !(readl(md->cldma_pdn + CLDMA_UL_STATUS) & BIT(q)))
+		writel(BIT(q), md->cldma_pdn + CLDMA_UL_RESUME_CMD);
+	spin_unlock_bh(&md->cldma_lock);
+
+	for (l = 0; l < CCMNI_LINKS; l++)
+		if (md->netdev[l] && md->link_txq[l] == q && netif_queue_stopped(md->netdev[l]))
+			netif_wake_queue(md->netdev[l]);
+}
+
+static irqreturn_t mt6739_ccci_cldma_irq(int irq, void *data)
+{
+	struct mt6739_ccci *md = data;
+	void __iomem *pdn = md->cldma_pdn;
+	u32 t, r;
+	unsigned int q;
+
+	t = readl(pdn + CLDMA_L2TISAR0) & ~readl(pdn + CLDMA_L2TIMR0);
+	r = readl(pdn + CLDMA_L2RISAR0);
+	writel(t, pdn + CLDMA_L2TISAR0);
+	writel(r, pdn + CLDMA_L2RISAR0);
+	writel(readl(pdn + CLDMA_IP_BUSY), pdn + CLDMA_IP_BUSY);
+
+	if ((t & CLDMA_TX_ERROR) || (r & CLDMA_RX_ERROR))
+		dev_warn_ratelimited(md->dev, "CLDMA error: TX %#x RX %#x\n", t, r);
+	for (q = 0; q < CLDMA_TXQ; q++)
+		if (t & (BIT(q) | BIT(q + 4)))
+			mt6739_ccci_tx_done(md, q);
+	if (r & (CLDMA_RX_DONE | CLDMA_RX_EMPTY))
+		mt6739_ccci_rx_collect(md);
+	return IRQ_HANDLED;
+}
+
+static netdev_tx_t mt6739_ccci_xmit(struct sk_buff *skb, struct net_device *ndev)
+{
+	struct ccmni_link *link = netdev_priv(ndev);
+	struct mt6739_ccci *md = link->md;
+	unsigned int q = md->link_txq[link->id], i;
+	struct cldma_tgpd *g;
+	dma_addr_t addr;
+
+	if (!md->ready || skb->len > CLDMA_BUF || skb_linearize(skb))
+		goto drop;
+
+	spin_lock(&md->cldma_lock);
+	i = md->tx_head[q];
+	if (md->tx_skb[q][i]) {
+		netif_stop_queue(ndev);
+		spin_unlock(&md->cldma_lock);
+		return NETDEV_TX_BUSY;
+	}
+	addr = dma_map_single(md->dev, skb->data, skb->len, DMA_TO_DEVICE);
+	if (dma_mapping_error(md->dev, addr)) {
+		spin_unlock(&md->cldma_lock);
+		goto drop;
+	}
+	g = &md->tgpd[q][i];
+	g->netif = link->id;
+	g->msb = 0;
+	g->debug = 1;
+	g->buf = cpu_to_le32(addr);
+	g->len = cpu_to_le16(skb->len);
+	md->tx_skb[q][i] = skb;
+	md->tx_addr[q][i] = addr;
+	md->tx_head[q] = (i + 1) % CLDMA_TX_LEN;
+	ndev->stats.tx_packets++;
+	ndev->stats.tx_bytes += skb->len;
+	dma_wmb();
+	WRITE_ONCE(g->flags, GPD_IOC | GPD_HWO);
+	wmb();
+	if (!md->tx_started) {
+		writel(0xf, md->cldma_pdn + CLDMA_UL_START_CMD);
+		md->tx_started = true;
+	} else if (!(readl(md->cldma_pdn + CLDMA_UL_STATUS) & BIT(q))) {
+		writel(BIT(q), md->cldma_pdn + CLDMA_UL_RESUME_CMD);
+	}
+	if (md->tx_skb[q][md->tx_head[q]])
+		netif_stop_queue(ndev);
+	spin_unlock(&md->cldma_lock);
+	return NETDEV_TX_OK;
+
+drop:
+	ndev->stats.tx_dropped++;
+	dev_kfree_skb_any(skb);
+	return NETDEV_TX_OK;
+}
+
+static int mt6739_ccci_net_open(struct net_device *ndev)
+{
+	netif_start_queue(ndev);
+	return 0;
+}
+
+static int mt6739_ccci_net_stop(struct net_device *ndev)
+{
+	netif_stop_queue(ndev);
+	return 0;
+}
+
+static const struct net_device_ops mt6739_ccci_netdev_ops = {
+	.ndo_open = mt6739_ccci_net_open,
+	.ndo_stop = mt6739_ccci_net_stop,
+	.ndo_start_xmit = mt6739_ccci_xmit,
+};
+
+static void mt6739_ccci_net_setup(struct net_device *ndev)
+{
+	ndev->header_ops = NULL;
+	ndev->type = ARPHRD_RAWIP;
+	ndev->hard_header_len = 0;
+	ndev->addr_len = 0;
+	ndev->flags = IFF_POINTOPOINT | IFF_NOARP;
+	ndev->netdev_ops = &mt6739_ccci_netdev_ops;
+	ndev->mtu = ETH_DATA_LEN;
+	ndev->min_mtu = ETH_MIN_MTU;
+	ndev->max_mtu = ETH_DATA_LEN;
+	ndev->tx_queue_len = 1000;
+	ndev->needs_free_netdev = true;
+}
+
+static int mt6739_ccci_newlink(void *ctxt, struct net_device *ndev, u32 if_id,
+			       struct netlink_ext_ack *extack)
+{
+	struct mt6739_ccci *md = ctxt;
+	struct ccmni_link *link = netdev_priv(ndev);
+	int ret;
+
+	if (if_id >= CCMNI_LINKS || md->netdev[if_id])
+		return -EINVAL;
+	link->md = md;
+	link->id = if_id;
+	ret = register_netdevice(ndev);
+	if (!ret)
+		md->netdev[if_id] = ndev;
+	return ret;
+}
+
+static void mt6739_ccci_dellink(void *ctxt, struct net_device *ndev, struct list_head *head)
+{
+	struct mt6739_ccci *md = ctxt;
+	struct ccmni_link *link = netdev_priv(ndev);
+
+	md->netdev[link->id] = NULL;
+	unregister_netdevice_queue(ndev, head);
+}
+
+static const struct wwan_ops mt6739_ccci_wwan_ops = {
+	.priv_size = sizeof(struct ccmni_link),
+	.setup = mt6739_ccci_net_setup,
+	.newlink = mt6739_ccci_newlink,
+	.dellink = mt6739_ccci_dellink,
 };
 
 static void mt6739_ccci_ctrl(struct mt6739_ccci *md, const struct ccci_header *hdr)
@@ -1070,7 +1486,8 @@ static irqreturn_t mt6739_ccci_irq(int irq, void *data)
 		writel(BIT(CCIF_CH_EX_CLEARQ), md->ap_ccif + CCIF_BUSY);
 		writel(CCIF_CH_EX_CLEARQ, md->ap_ccif + CCIF_TCHNUM);
 	}
-	if (ch & GENMASK(23, CCIF_CH_EXCEPTION + 1))
+	/* Channel 20 is a peer wakeup hint; the vendor driver only takes a wake lock. */
+	if (ch & GENMASK(23, CCIF_CH_EXCEPTION + 1) & ~BIT(CCIF_CH_PEER_WAKEUP))
 		dev_warn(md->dev, "CCIF exception channels %#x\n", ch);
 	return IRQ_HANDLED;
 }
@@ -1184,6 +1601,9 @@ static int mt6739_ccci_start(struct mt6739_ccci *md)
 						  md->rings);
 	mt6739_ccci_create_rings(md, SMEM_CCISM_EXP, ring_exp_size, ring_exp_size, md->exp_rings);
 	wmb();
+	ret = mt6739_ccci_cldma_init(md);
+	if (ret)
+		goto err_clk;
 
 	regmap_write(infra, INFRA_RST1_SET, INFRA_RST1_CCIF);
 	regmap_write(infra, INFRA_RST1_CLR, INFRA_RST1_CCIF);
@@ -1229,6 +1649,7 @@ static int mt6739_ccci_start(struct mt6739_ccci *md)
 
 	writel(MD_RGU_WDT_OFF, md->md_rgu + MD_RGU_WDT);
 	writel(1, md->md_cfg + MD_CFG_BOOT_SLAVE);
+	mt6739_ccci_cldma_start(md);
 
 	regmap_write(infra, INFRA_PROT_SET, INFRA_PROT_AP2MD);
 	if (regmap_read_poll_timeout(infra, INFRA_PROT_STA1, val, val & INFRA_PROT_AP2MD, 10, 10000))
@@ -1297,7 +1718,7 @@ static void __iomem *mt6739_ccci_map_shared(struct platform_device *pdev, const 
 
 static int mt6739_ccci_probe(struct platform_device *pdev)
 {
-	static const char * const own[] = { "cldma-ao", "ap-ccif", "md-ccif", "boot-stats", "md-cfg",
+	static const char * const own[] = { "cldma-ao", "cldma-pdn", "ap-ccif", "md-ccif", "boot-stats", "md-cfg",
 					     "md-rgu", "md-pll", "md-clksw" };
 	static const char * const shared[] = { "topckgen", "apmixed", "dvfsrc" };
 	struct device *dev = &pdev->dev;
@@ -1323,13 +1744,14 @@ static int mt6739_ccci_probe(struct platform_device *pdev)
 		return ret;
 
 	own_base[0] = &md->cldma_ao;
-	own_base[1] = &md->ap_ccif;
-	own_base[2] = &md->md_ccif;
-	own_base[3] = &md->boot_stats;
-	own_base[4] = &md->md_cfg;
-	own_base[5] = &md->md_rgu;
-	own_base[6] = &md->md_pll;
-	own_base[7] = &md->md_clksw;
+	own_base[1] = &md->cldma_pdn;
+	own_base[2] = &md->ap_ccif;
+	own_base[3] = &md->md_ccif;
+	own_base[4] = &md->boot_stats;
+	own_base[5] = &md->md_cfg;
+	own_base[6] = &md->md_rgu;
+	own_base[7] = &md->md_pll;
+	own_base[8] = &md->md_clksw;
 	for (i = 0; i < ARRAY_SIZE(own); i++) {
 		*own_base[i] = devm_platform_ioremap_resource_byname(pdev, own[i]);
 		if (IS_ERR(*own_base[i]))
@@ -1367,6 +1789,22 @@ static int mt6739_ccci_probe(struct platform_device *pdev)
 	if (IS_ERR(md->smem))
 		return PTR_ERR(md->smem);
 
+	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
+	if (ret)
+		return ret;
+	spin_lock_init(&md->cldma_lock);
+	md->gpd_mem = dmam_alloc_coherent(dev, (CLDMA_RX_LEN + CLDMA_TXQ * CLDMA_TX_LEN) *
+					  sizeof(struct cldma_tgpd), &md->gpd_dma, GFP_KERNEL);
+	if (!md->gpd_mem)
+		return -ENOMEM;
+	md->cldma_irq = platform_get_irq_byname(pdev, "cldma");
+	if (md->cldma_irq < 0)
+		return md->cldma_irq;
+	ret = devm_request_threaded_irq(dev, md->cldma_irq, NULL, mt6739_ccci_cldma_irq,
+					IRQF_ONESHOT | IRQF_NO_AUTOEN, "mt6739-cldma", md);
+	if (ret)
+		return ret;
+
 	for (i = 0; i < 2; i++) {
 		irq = platform_get_irq(pdev, i);
 		if (irq < 0)
@@ -1380,6 +1818,11 @@ static int mt6739_ccci_probe(struct platform_device *pdev)
 	ret = mt6739_ccci_ports_register(md);
 	if (ret)
 		return ret;
+	ret = wwan_register_ops(dev, &mt6739_ccci_wwan_ops, md, 0);
+	if (ret) {
+		mt6739_ccci_ports_unregister();
+		return ret;
+	}
 
 	dir = debugfs_create_dir("mt6739-ccci", NULL);
 	debugfs_create_file("start", 0200, dir, md, &mt6739_ccci_start_fops);
@@ -1404,6 +1847,7 @@ static void mt6739_ccci_remove(struct platform_device *pdev)
 	debugfs_remove_recursive(md->debugfs);
 	if (md->at_port)
 		wwan_remove_port(md->at_port);
+	wwan_unregister_ops(&pdev->dev);
 	mt6739_ccci_ports_unregister();
 }
 
