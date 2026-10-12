@@ -20,6 +20,7 @@
 #include <linux/skbuff.h>
 #include <linux/timekeeping.h>
 #include <linux/unaligned.h>
+#include <linux/wwan.h>
 
 #define CCIF_BUSY		0x04
 #define CCIF_TCHNUM		0x0c
@@ -43,6 +44,9 @@
 #define MD_INIT_CHK_ID		0x5555ffff
 #define CCCI_CONTROL_RX		0
 #define CCCI_CONTROL_TX		1
+#define CCCI_AT_RX		10
+#define CCCI_AT_TX		12
+#define CCCI_AT_QUEUE		5
 #define CCCI_RPC_RX		32
 #define CCCI_RPC_TX		33
 
@@ -278,8 +282,7 @@ static const u8 ap_feature_mask[MD_FEATURE_COUNT] = {
 	[F_CLIB_TIME] = FEATURE_MUST,
 	[F_C2K] = FEATURE_MUST,
 	[F_MD_IMAGE_START] = FEATURE_OPTIONAL,
-	[F_CCB_SHM] = FEATURE_MUST,
-	[F_DHL_RAW_SHM] = FEATURE_MUST,
+	/* CCB and DHL raw need the CCB control setup that ccci_mdinit does; not offered yet. */
 	[F_NETD_SHM] = FEATURE_MUST,
 	[F_USB_SHM] = FEATURE_MUST,
 	[F_EE_AFTER_EPOF] = FEATURE_MUST,
@@ -344,6 +347,8 @@ struct mt6739_ccci {
 	struct mutex lock;
 	bool started;
 	bool ready;
+	struct wwan_port *at_port;
+	struct dentry *debugfs;
 };
 
 static int mt6739_ccci_parse_lk_info(struct mt6739_ccci *md)
@@ -595,6 +600,58 @@ static void mt6739_ccci_rpc(struct mt6739_ccci *md, int q, u8 *pkt, u32 n)
 		dev_err(md->dev, "RPC %#x: no room for the reply\n", op);
 }
 
+static void mt6739_ccci_at_rx(struct mt6739_ccci *md, const u8 *data, u32 n)
+{
+	struct sk_buff *skb;
+
+	if (!md->at_port || !n)
+		return;
+	skb = alloc_skb(n, GFP_KERNEL);
+	if (!skb)
+		return;
+	skb_put_data(skb, data, n);
+	wwan_port_rx(md->at_port, skb);
+}
+
+static int mt6739_ccci_at_start(struct wwan_port *port)
+{
+	return 0;
+}
+
+static void mt6739_ccci_at_stop(struct wwan_port *port)
+{
+}
+
+static int mt6739_ccci_at_tx(struct wwan_port *port, struct sk_buff *skb)
+{
+	struct mt6739_ccci *md = wwan_port_get_drvdata(port);
+	struct ccci_header *hdr;
+	int ret;
+
+	if (!md->ready)
+		return -ENODEV;
+	if (skb_headroom(skb) < sizeof(*hdr) &&
+	    pskb_expand_head(skb, sizeof(*hdr), 0, GFP_KERNEL))
+		return -ENOMEM;
+	hdr = skb_push(skb, sizeof(*hdr));
+	memset(hdr, 0, sizeof(*hdr));
+	hdr->channel = CCCI_AT_TX;
+	hdr->data[1] = skb->len;
+	ret = mt6739_ccci_ring_tx(md, CCCI_AT_QUEUE, skb->data, skb->len);
+	if (ret) {
+		skb_pull(skb, sizeof(*hdr));
+		return ret;
+	}
+	consume_skb(skb);
+	return 0;
+}
+
+static const struct wwan_port_ops mt6739_ccci_at_ops = {
+	.start = mt6739_ccci_at_start,
+	.stop = mt6739_ccci_at_stop,
+	.tx = mt6739_ccci_at_tx,
+};
+
 static void mt6739_ccci_ctrl(struct mt6739_ccci *md, const struct ccci_header *hdr)
 {
 	switch (hdr->data[1]) {
@@ -603,6 +660,14 @@ static void mt6739_ccci_ctrl(struct mt6739_ccci *md, const struct ccci_header *h
 			break;
 		dev_info(md->dev, "HS2: MD is ready\n");
 		md->ready = true;
+		if (!md->at_port) {
+			md->at_port = wwan_create_port(md->dev, WWAN_PORT_AT, &mt6739_ccci_at_ops,
+						       NULL, md);
+			if (IS_ERR(md->at_port)) {
+				dev_err(md->dev, "AT port: %pe\n", md->at_port);
+				md->at_port = NULL;
+			}
+		}
 		break;
 	case MD_EX:
 	case MD_EX_REC_OK:
@@ -776,6 +841,9 @@ static void mt6739_ccci_ring_rx(struct mt6739_ccci *md, int q)
 			break;
 		case CCCI_RPC_RX:
 			mt6739_ccci_rpc(md, q, md->rx_pkt, pkt[1]);
+			break;
+		case CCCI_AT_RX:
+			mt6739_ccci_at_rx(md, md->rx_pkt + sizeof(*hdr), pkt[1] - sizeof(*hdr));
 			break;
 		default:
 			if (mt6739_ccci_port_rx(md, md->rx_pkt, pkt[1]))
@@ -1321,13 +1389,18 @@ static int mt6739_ccci_probe(struct platform_device *pdev)
 		md->ccb_blob.size = md->ccb_size;
 		debugfs_create_blob("ccb", 0400, dir, &md->ccb_blob);
 	}
-	platform_set_drvdata(pdev, dir);
+	md->debugfs = dir;
+	platform_set_drvdata(pdev, md);
 	return 0;
 }
 
 static void mt6739_ccci_remove(struct platform_device *pdev)
 {
-	debugfs_remove_recursive(platform_get_drvdata(pdev));
+	struct mt6739_ccci *md = dev_get_drvdata(&pdev->dev);
+
+	debugfs_remove_recursive(md->debugfs);
+	if (md->at_port)
+		wwan_remove_port(md->at_port);
 	mt6739_ccci_ports_unregister();
 }
 

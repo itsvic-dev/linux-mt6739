@@ -59,6 +59,7 @@ config MTK_MT6739_CCCI
 	tristate "MediaTek MT6739 modem (CCCI)"
 	depends on ARCH_MEDIATEK || COMPILE_TEST
 	depends on MFD_SYSCON
+	depends on WWAN
 	help
 	  Power-on and CCCI handshake for the MT6739 integrated modem
 	  (MD1). The bootloader must load the modem image.
