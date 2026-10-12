@@ -1,0 +1,148 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/* MT6739 AFE registers: a subset of MT8183, at the same offsets. */
+
+#ifndef _MT6739_REG_H_
+#define _MT6739_REG_H_
+
+#define AUDIO_TOP_CON0			0x0000
+#define AUDIO_TOP_CON1			0x0004
+#define AUDIO_TOP_CON3			0x000c
+#define AFE_DAC_CON0			0x0010
+#define AFE_DAC_CON1			0x0014
+#define AFE_CONN3			0x002c
+#define AFE_CONN4			0x0030
+#define AFE_DL1_BASE			0x0040
+#define AFE_DL1_CUR			0x0044
+#define AFE_DL1_END			0x0048
+#define AFE_DL2_BASE			0x0050
+#define AFE_DL2_CUR			0x0054
+#define AFE_DL2_END			0x0058
+#define AFE_CONN5			0x005c
+#define AFE_CONN_24BIT			0x006c
+#define AFE_AWB_BASE			0x0070
+#define AFE_AWB_END			0x0078
+#define AFE_AWB_CUR			0x007c
+#define AFE_VUL_BASE			0x0080
+#define AFE_VUL_END			0x0088
+#define AFE_VUL_CUR			0x008c
+#define AFE_CONN6			0x00bc
+#define AFE_MEMIF_MSB			0x00cc
+#define AFE_MEMIF_MON0			0x00d0
+#define AFE_MEMIF_MON9			0x00f4
+#define AFE_ADDA_DL_SRC2_CON0		0x0108
+#define AFE_ADDA_DL_SRC2_CON1		0x010c
+#define AFE_ADDA_UL_SRC_CON0		0x0114
+#define AFE_ADDA_UL_SRC_CON1		0x0118
+#define AFE_ADDA_TOP_CON0		0x0120
+#define AFE_ADDA_UL_DL_CON0		0x0124
+#define AFE_ADDA_SRC_DEBUG_MON0		0x0130
+#define AFE_ADDA_SRC_DEBUG_MON1		0x0134
+#define AFE_ADDA_UL_SRC_MON0		0x0148
+#define AFE_ADDA_UL_SRC_MON1		0x014c
+#define AFE_ADDA_PREDIS_CON0		0x0260
+#define AFE_ADDA_PREDIS_CON1		0x0264
+#define AFE_IRQ_MCU_CON1		0x02e4
+#define AFE_DAC_MON			0x02ec
+#define AFE_IRQ_MCU_CNT0		0x0300
+#define AFE_IRQ_MCU_CNT6		0x0304
+#define AFE_IRQ0_MCU_CNT_MON		0x0310
+#define AFE_IRQ6_MCU_CNT_MON		0x0314
+#define AFE_IRQ3_MCU_CNT_MON		0x0398
+#define AFE_IRQ4_MCU_CNT_MON		0x039c
+#define AFE_IRQ_MCU_CON0		0x03a0
+#define AFE_IRQ_MCU_STATUS		0x03a4
+#define AFE_IRQ_MCU_CLR			0x03a8
+#define AFE_IRQ_MCU_CNT1		0x03ac
+#define AFE_IRQ_MCU_CNT2		0x03b0
+#define AFE_IRQ_MCU_EN			0x03b4
+#define AFE_IRQ_MCU_MON2		0x03b8
+#define AFE_IRQ_MCU_CNT5		0x03bc
+#define AFE_IRQ1_MCU_CNT_MON		0x03c0
+#define AFE_IRQ2_MCU_CNT_MON		0x03c4
+#define AFE_IRQ1_MCU_EN_CNT_MON		0x03c8
+#define AFE_IRQ5_MCU_CNT_MON		0x03cc
+#define AFE_IRQ_MCU_CNT7		0x03dc
+#define AFE_IRQ7_MCU_CNT_MON		0x03e0
+#define AFE_IRQ_MCU_CNT3		0x03e4
+#define AFE_IRQ_MCU_CNT4		0x03e8
+#define AFE_MEMIF_HD_MODE		0x03f8
+#define AFE_MEMIF_HDALIGN		0x03fc
+#define AFE_CONN9			0x0440
+#define AFE_CONN10			0x0444
+#define AFE_CONN_24BIT_1		0x0994
+#define AFE_DL1_BASE_MSB		0x0b00
+#define AFE_DL1_CUR_MSB			0x0b04
+#define AFE_DL1_END_MSB			0x0b08
+#define AFE_DL2_BASE_MSB		0x0b10
+#define AFE_DL2_CUR_MSB			0x0b14
+#define AFE_DL2_END_MSB			0x0b18
+#define AFE_AWB_BASE_MSB		0x0b20
+#define AFE_AWB_END_MSB			0x0b28
+#define AFE_AWB_CUR_MSB			0x0b2c
+#define AFE_VUL_BASE_MSB		0x0b30
+#define AFE_VUL_END_MSB			0x0b38
+#define AFE_VUL_CUR_MSB			0x0b3c
+#define AFE_ADDA_DL_SDM_DCCOMP_CON	0x0c50
+#define AFE_ADDA_DL_SDM_FIFO_MON	0x0c60
+#define AFE_ADDA_DL_SDM_OUT_MON		0x0c6c
+#define AFE_ADDA_MTKAIF_CFG0		0x0e00
+#define AFE_ADDA_MTKAIF_RX_CFG0		0x0e20
+#define AFE_ADDA_MTKAIF_MON0		0x0e34
+#define AFE_ADDA_MTKAIF_MON1		0x0e38
+#define AFE_AUD_PAD_TOP			0x0e40
+
+#define AFE_MAX_REGISTER		AFE_AUD_PAD_TOP
+#define AFE_IRQ_STATUS_BITS		0xff
+
+/* AUDIO_TOP_CON0 */
+#define AUD_TOP_DCM_EN			BIT(29)
+
+/* AFE_DAC_CON0 */
+#define AWB_ON_SFT			6
+#define VUL_ON_SFT			3
+#define DL2_ON_SFT			2
+#define DL1_ON_SFT			1
+#define AFE_ON_MASK_SFT			BIT(0)
+
+/* AFE_DAC_CON1 */
+#define VUL_DATA_SFT			27
+#define AWB_DATA_SFT			24
+#define DL2_DATA_SFT			22
+#define DL1_DATA_SFT			21
+#define VUL_MODE_SFT			16
+#define AWB_MODE_SFT			12
+#define DL2_MODE_SFT			4
+#define DL1_MODE_SFT			0
+#define MEMIF_MODE_MASK			0xf
+
+/* AFE_DAC_MON */
+#define AFE_ON_RETM_MASK_SFT		BIT(0)
+
+/* AFE_MEMIF_MSB */
+#define CPU_HD_ALIGN_MASK_SFT		BIT(28)
+
+/* AFE_MEMIF_HD_MODE */
+#define VUL_HD_SFT			10
+#define AWB_HD_SFT			8
+#define DL2_HD_SFT			4
+#define DL1_HD_SFT			0
+
+/* AFE_MEMIF_HDALIGN */
+#define VUL_HD_ALIGN_SFT		5
+#define AWB_HD_ALIGN_SFT		4
+#define DL2_HD_ALIGN_SFT		2
+#define DL1_HD_ALIGN_SFT		0
+
+/* AFE_ADDA_DL_SRC2_CON0 */
+#define DL_2_SRC_ON_TMP_CTL_PRE_SFT	0
+
+/* AFE_ADDA_UL_SRC_CON0 */
+#define UL_SRC_ON_TMP_CTL_SFT		0
+
+/* AFE_ADDA_UL_DL_CON0 */
+#define ADDA_AFE_ON_SFT			0
+
+/* AFE_ADDA_DL_SDM_DCCOMP_CON */
+#define ATTGAIN_CTL_MASK_SFT		GENMASK(5, 0)
+
+#endif
