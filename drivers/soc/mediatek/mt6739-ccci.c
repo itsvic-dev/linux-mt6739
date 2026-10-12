@@ -1671,7 +1671,7 @@ err_clk:
 	return ret;
 }
 
-static ssize_t power_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t state_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct mt6739_ccci *md = dev_get_drvdata(dev);
 	const char *state = "off";
@@ -1685,7 +1685,7 @@ static ssize_t power_show(struct device *dev, struct device_attribute *attr, cha
 	return sysfs_emit(buf, "%s\n", state);
 }
 
-static ssize_t power_store(struct device *dev, struct device_attribute *attr, const char *buf,
+static ssize_t state_store(struct device *dev, struct device_attribute *attr, const char *buf,
 			   size_t len)
 {
 	struct mt6739_ccci *md = dev_get_drvdata(dev);
@@ -1707,10 +1707,10 @@ static ssize_t power_store(struct device *dev, struct device_attribute *attr, co
 	mutex_unlock(&md->lock);
 	return ret ?: len;
 }
-static DEVICE_ATTR_RW(power);
+static DEVICE_ATTR_RW(state);
 
 static struct attribute *mt6739_ccci_attrs[] = {
-	&dev_attr_power.attr,
+	&dev_attr_state.attr,
 	NULL
 };
 ATTRIBUTE_GROUPS(mt6739_ccci);
