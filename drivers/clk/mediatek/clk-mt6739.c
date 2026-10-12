@@ -550,6 +550,38 @@ free_data:
 	return r;
 }
 
+static const char * const mcu_parents[] = {
+	"clk26m",
+	"armpll_ll",
+};
+
+static int clk_mt6739_top_ao_probe(struct platform_device *pdev)
+{
+	struct clk_hw_onecell_data *clk_data;
+	void __iomem *base;
+	struct clk_hw *hw;
+
+	base = devm_platform_ioremap_resource(pdev, 0);
+	if (IS_ERR(base))
+		return PTR_ERR(base);
+
+	clk_data = devm_kzalloc(&pdev->dev, struct_size(clk_data, hws, CLK_TOP_AO_NR_CLK),
+				GFP_KERNEL);
+	if (!clk_data)
+		return -ENOMEM;
+	clk_data->num = CLK_TOP_AO_NR_CLK;
+
+	hw = devm_clk_hw_register_mux(&pdev->dev, "mcu_sel", mcu_parents,
+				      ARRAY_SIZE(mcu_parents),
+				      CLK_IS_CRITICAL | CLK_SET_RATE_PARENT,
+				      base, 8, 2, 0, &mt6739_clk_lock);
+	if (IS_ERR(hw))
+		return PTR_ERR(hw);
+	clk_data->hws[CLK_TOP_AO_MCU_SEL] = hw;
+
+	return devm_of_clk_add_hw_provider(&pdev->dev, of_clk_hw_onecell_get, clk_data);
+}
+
 static u16 infra_rst_ofs[] = { 0x140 };
 
 static const struct mtk_clk_rst_desc infra_rst_desc = {
@@ -599,6 +631,9 @@ static const struct of_device_id of_match_clk_mt6739[] = {
 	}, {
 		.compatible = "mediatek,mt6739-topckgen",
 		.data = clk_mt6739_top_probe,
+	}, {
+		.compatible = "mediatek,mt6739-topckgen-ao",
+		.data = clk_mt6739_top_ao_probe,
 	}, {
 		.compatible = "mediatek,mt6739-infracfg",
 		.data = clk_mt6739_infra_probe,
