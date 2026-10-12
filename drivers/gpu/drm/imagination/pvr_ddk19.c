@@ -1100,6 +1100,10 @@ int pvr_ddk19_hwrt_data_init(struct pvr_hwrt_data *hwrt_data)
 u32 pvr_ddk19_job_cmd_len(struct pvr_job *job)
 {
 	switch (job->type) {
+	case DRM_PVR_JOB_TYPE_GEOMETRY:
+		return sizeof(struct ddk19_fwif_cmd_ta);
+	case DRM_PVR_JOB_TYPE_FRAGMENT:
+		return sizeof(struct ddk19_fwif_cmd_3d);
 	case DRM_PVR_JOB_TYPE_COMPUTE:
 		return sizeof(struct ddk19_fwif_cmd_compute);
 	default:
@@ -1107,9 +1111,100 @@ u32 pvr_ddk19_job_cmd_len(struct pvr_job *job)
 	}
 }
 
+static u32 ddk19_ta_cmd(struct pvr_job *job, struct ddk19_fwif_cmd_ta *cmd)
+{
+	const struct rogue_fwif_cmd_geom *in = job->cmd;
+	const struct rogue_fwif_static_rendercontext_state *state =
+		job->ctx->data + pvr_ddk19_static_state_offset(job->ctx->type);
+	const struct rogue_fwif_geom_registers_caswitch *cs = &state->ctxswitch_regs[0];
+	const struct rogue_fwif_hwrtdata *data = &job->hwrt->data;
+
+	memset(cmd, 0, sizeof(*cmd));
+	cmd->pm_mtile_array = data->macrotile_array_dev_addr;
+	cmd->ppp_ctrl = in->regs.ppp_ctrl;
+	cmd->ppp_wclamp = DDK19_PPP_WCLAMP;
+	cmd->te_psg = in->regs.te_psg;
+	cmd->te_psgregion_addr = data->rgn_header_dev_addr;
+	cmd->vdm_ctrl_stream_base = in->regs.vdm_ctrl_stream_base;
+	cmd->ta_rtc_addr_base = data->rtc_dev_addr;
+	cmd->tpu_border_colour_table = in->regs.tpu_border_colour_table;
+	cmd->tpu = in->regs.tpu;
+	cmd->vdm_context_state_base_addr = cs->geom_reg_vdm_context_state_base_addr;
+	cmd->ta_context_state_base_addr = cs->geom_reg_ta_context_state_base_addr;
+	for (int i = 0; i < ARRAY_SIZE(cmd->ta_state); i++) {
+		cmd->ta_state[i].store_task[0] = cs->geom_state[i].geom_reg_vdm_context_store_task0;
+		cmd->ta_state[i].store_task[1] = cs->geom_state[i].geom_reg_vdm_context_store_task1;
+		cmd->ta_state[i].store_task[2] = cs->geom_state[i].geom_reg_vdm_context_store_task2;
+		cmd->ta_state[i].resume_task[0] = cs->geom_state[i].geom_reg_vdm_context_resume_task0;
+		cmd->ta_state[i].resume_task[1] = cs->geom_state[i].geom_reg_vdm_context_resume_task1;
+		cmd->ta_state[i].resume_task[2] = cs->geom_state[i].geom_reg_vdm_context_resume_task2;
+	}
+	cmd->flags = in->flags & ROGUE_GEOM_FLAGS_LASTKICK;
+	cmd->hwrt_data_fw_addr = in->cmd_shared.hwrt_data_fw_addr;
+	cmd->dummy_rgnhdr_te_psgregion_addr = data->rgn_header_dev_addr;
+
+	return sizeof(*cmd);
+}
+
+static u32 ddk19_3d_cmd(struct pvr_job *job, struct ddk19_fwif_cmd_3d *cmd)
+{
+	const struct rogue_fwif_cmd_frag *in = job->cmd;
+	const struct rogue_fwif_frag_regs *regs = &in->regs;
+	const struct rogue_fwif_hwrtdata_common *common = &job->hwrt->hwrt_dataset->common;
+	const u32 flags = ROGUE_FRAG_FLAGS_DEPTHBUFFER | ROGUE_FRAG_FLAGS_STENCILBUFFER |
+			  ROGUE_FRAG_FLAGS_DISABLE_PIXELMERGE | ROGUE_FRAG_FLAGS_SCRATCHBUFFER;
+
+	memset(cmd, 0, sizeof(*cmd));
+	cmd->usc_pixel_output_ctrl = regs->usc_pixel_output_ctrl;
+	for (int i = 0; i < ARRAY_SIZE(cmd->usc_clear_register); i++)
+		cmd->usc_clear_register[i] = regs->usc_clear_register[i];
+	cmd->isp_mtile_base = job->hwrt->data.rgn_header_dev_addr;
+	cmd->isp_mtile_size = common->isp_mtile_size;
+	cmd->isp_multisamplectl = common->multi_sample_ctl;
+	cmd->isp_scissor_base = regs->isp_scissor_base;
+	cmd->isp_dbias_base = regs->isp_dbias_base;
+	cmd->isp_bgobjdepth = regs->isp_bgobjdepth;
+	cmd->isp_bgobjvals = regs->isp_bgobjvals;
+	cmd->isp_aa = regs->isp_aa;
+	cmd->isp_oclqry_base = regs->isp_oclqry_base;
+	cmd->isp_zlsctl = regs->isp_zlsctl;
+	cmd->isp_zload_base = regs->isp_zload_store_base;
+	cmd->isp_zstore_base = regs->isp_zload_store_base;
+	cmd->isp_stencil_load_base = regs->isp_stencil_load_store_base;
+	cmd->isp_stencil_store_base = regs->isp_stencil_load_store_base;
+	cmd->isp_zls_pixels = regs->isp_zls_pixels;
+	cmd->isp_rgn = common->rgn_header_size;
+	cmd->isp_ctl = regs->isp_ctl;
+	cmd->fb_cdc_zls = regs->fb_cdc_zls;
+	cmd->event_pixel_pds_code = DDK19_PDS_EOT_OFFSET;
+	cmd->event_pixel_pds_data = regs->event_pixel_pds_data;
+	cmd->pr_event_pixel_pds_data = regs->event_pixel_pds_data;
+	cmd->event_pixel_pds_info = regs->event_pixel_pds_info;
+	memcpy(cmd->pbe_word, regs->pbe_word, sizeof(cmd->pbe_word));
+	cmd->tpu_border_colour_table = regs->tpu_border_colour_table;
+	cmd->tpu = regs->tpu;
+	cmd->pds_bgnd[0] = regs->pds_bgnd[0];
+	cmd->pds_bgnd[1] = regs->pds_bgnd[1];
+	cmd->pds_bgnd[3] = regs->pds_bgnd[2];
+	cmd->pds_pr_bgnd[0] = regs->pds_pr_bgnd[0];
+	cmd->pds_pr_bgnd[1] = regs->pds_pr_bgnd[1];
+	cmd->pds_pr_bgnd[3] = regs->pds_pr_bgnd[2];
+	cmd->isp_dummy_stencil_store_base = regs->isp_dummy_stencil_store_base;
+	cmd->flags = in->flags & flags;
+	cmd->hwrt_data_fw_addr = in->cmd_shared.hwrt_data_fw_addr;
+	cmd->zls_stride = in->zls_stride;
+	cmd->sls_stride = in->sls_stride;
+
+	return sizeof(*cmd);
+}
+
 u32 pvr_ddk19_job_cmd(struct pvr_job *job, void *out)
 {
 	switch (job->type) {
+	case DRM_PVR_JOB_TYPE_GEOMETRY:
+		return ddk19_ta_cmd(job, out);
+	case DRM_PVR_JOB_TYPE_FRAGMENT:
+		return ddk19_3d_cmd(job, out);
 	case DRM_PVR_JOB_TYPE_COMPUTE: {
 		const struct rogue_fwif_cmd_compute *in = job->cmd;
 		const struct rogue_fwif_static_computecontext_state *state =

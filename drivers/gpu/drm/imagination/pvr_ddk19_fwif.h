@@ -56,6 +56,8 @@
 #define DDK19_GPU_UTIL_FWCB_LAST_WORD 10248
 
 /* The firmware takes only the CDM task limit (bits 24-31) from the compute command. */
+#define DDK19_PPP_WCLAMP 0x29e12e13
+#define DDK19_PDS_EOT_OFFSET 128
 #define DDK19_PDS_CTRL_MAX_NUM_CDM_TASKS (48ull << 24)
 
 #define DDK19_DM_GP 0
@@ -363,6 +365,95 @@ struct ddk19_fwif_cmd_compute {
 	u32 max_deadline_ms;
 };
 
+struct ddk19_fwif_cmd_ta {
+	u64 pm_mtile_array;
+	u64 ppp_ctrl;
+	u64 ppp_wclamp;
+	u64 te_psg;
+	u64 te_psgregion_addr;
+	u64 vdm_ctrl_stream_base;
+	u64 vdm_ctrl_stream_terminate;
+	u64 vdm_sync_pds_data_base;
+	u64 ta_rtc_addr_base;
+	u64 tpu_border_colour_table;
+	u64 tpu_yuv_csc_coefficients;
+	u64 tpu;
+	u64 tpu_arrays_vdm;
+	u64 vdm_context_state_base_addr;
+	u64 ta_context_state_base_addr;
+	struct {
+		u64 store_task[3];
+		u64 resume_task[3];
+	} ta_state[2];
+	u32 flags;
+	u32 frame_num;
+	u32 hwrt_data_fw_addr;
+	u32 zbuffer_fw_addr;
+	u32 sbuffer_fw_addr;
+	u32 msaa_scratch_buffer_fw_addr;
+	u32 pr_ta_3d_fence[2];
+	u32 pr_hw_sync_fence[2];
+	u32 max_deadline_ms;
+	u32 padding0;
+	u64 dummy_rgnhdr_te_psgregion_addr;
+	u32 brn61484_live_rt;
+	u32 padding1;
+};
+
+struct ddk19_fwif_cmd_3d {
+	u64 usc_pixel_output_ctrl;
+	u64 usc_clear_register[8];
+	u64 isp_mtile_base;
+	u64 isp_mtile_size;
+	u64 isp_gridoffset;
+	u64 isp_multisamplectl;
+	u64 isp_scissor_base;
+	u64 isp_dbias_base;
+	u64 isp_bgobjdepth;
+	u64 isp_bgobjvals;
+	u64 isp_aa;
+	u64 isp_oclqry_base;
+	u64 isp_zlsctl;
+	u64 isp_mask_load_base;
+	u64 isp_mask_store_base;
+	u64 isp_zload_base;
+	u64 isp_zstore_base;
+	u64 isp_stencil_load_base;
+	u64 isp_stencil_store_base;
+	u64 isp_zls_pixels;
+	u64 isp_rgn;
+	u64 isp_ctl;
+	u64 fb_cdc_zls;
+	u64 pm_3d_fstack_base;
+	u64 pm_3d_fstack;
+	u64 event_pixel_pds_code;
+	u64 event_pixel_pds_data;
+	u64 pr_event_pixel_pds_data;
+	u64 event_pixel_pds_info;
+	u64 pbe_word[8][3];
+	u64 pbe;
+	u64 tpu_border_colour_table;
+	u64 tpu_yuv_csc_coefficients;
+	u64 tpu;
+	u64 tpu_arrays;
+	u64 tpumaddctrl;
+	u64 pds_bgnd[4];
+	u64 pds_pr_bgnd[4];
+	u64 blackpearl_fix;
+	u64 isp_dummy_stencil_store_base;
+	u32 flags;
+	u32 frame_num;
+	u32 hwrt_data_fw_addr;
+	u32 zbuffer_fw_addr;
+	u32 sbuffer_fw_addr;
+	u32 msaa_scratch_buffer_fw_addr;
+	u32 zls_stride;
+	u32 sls_stride;
+	u16 zslice_offsets[8];
+	u32 max_deadline_ms;
+	u32 padding;
+};
+
 struct ddk19_fwif_freelist {
 	u64 freelist_dev_addr;
 	u64 current_dev_addr;
@@ -496,6 +587,25 @@ DDK19_CHECK(struct ddk19_fwif_hwrtdata, tail_ptrs_dev_addr, 264);
 DDK19_CHECK(struct ddk19_fwif_hwrtdata, tpc_size, 272);
 DDK19_CHECK(struct ddk19_fwif_hwrtdata, isp_merge_lower_x, 296);
 DDK19_CHECK(struct ddk19_fwif_hwrtdata, disable_tile_reordering, 320);
+static_assert(sizeof(struct ddk19_fwif_cmd_ta) == 280);
+DDK19_CHECK(struct ddk19_fwif_cmd_ta, vdm_context_state_base_addr, 104);
+DDK19_CHECK(struct ddk19_fwif_cmd_ta, flags, 216);
+DDK19_CHECK(struct ddk19_fwif_cmd_ta, hwrt_data_fw_addr, 224);
+DDK19_CHECK(struct ddk19_fwif_cmd_ta, max_deadline_ms, 256);
+DDK19_CHECK(struct ddk19_fwif_cmd_ta, dummy_rgnhdr_te_psgregion_addr, 264);
+static_assert(sizeof(struct ddk19_fwif_cmd_3d) == 664);
+DDK19_CHECK(struct ddk19_fwif_cmd_3d, isp_mtile_base, 72);
+DDK19_CHECK(struct ddk19_fwif_cmd_3d, isp_rgn, 216);
+DDK19_CHECK(struct ddk19_fwif_cmd_3d, event_pixel_pds_code, 256);
+DDK19_CHECK(struct ddk19_fwif_cmd_3d, pbe_word, 288);
+DDK19_CHECK(struct ddk19_fwif_cmd_3d, pbe, 480);
+DDK19_CHECK(struct ddk19_fwif_cmd_3d, tpumaddctrl, 520);
+DDK19_CHECK(struct ddk19_fwif_cmd_3d, pds_bgnd, 528);
+DDK19_CHECK(struct ddk19_fwif_cmd_3d, isp_dummy_stencil_store_base, 600);
+DDK19_CHECK(struct ddk19_fwif_cmd_3d, flags, 608);
+DDK19_CHECK(struct ddk19_fwif_cmd_3d, zls_stride, 632);
+DDK19_CHECK(struct ddk19_fwif_cmd_3d, zslice_offsets, 640);
+DDK19_CHECK(struct ddk19_fwif_cmd_3d, max_deadline_ms, 656);
 static_assert(sizeof(struct ddk19_fwif_freelist) == 64);
 DDK19_CHECK(struct ddk19_fwif_freelist, hwr_counter, 40);
 DDK19_CHECK(struct ddk19_fwif_freelist, oom_ready_limit, 56);
