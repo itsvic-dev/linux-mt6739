@@ -56,6 +56,16 @@ config SND_SOC_MT6739
 	  Select Y if you have such device.
 	  If unsure select "N".
 
+config SND_SOC_MT6739_MT6357
+	tristate "ASoC Audio driver for MT6739 with MT6357 codec"
+	depends on SND_SOC_MT6739 && MTK_PMIC_WRAP
+	select SND_SOC_MT6357
+	help
+	  This adds the ASoC machine driver for MediaTek MT6739 boards
+	  with the MT6357 codec.
+	  Select Y if you have such device.
+	  If unsure select "N".
+
 config SND_SOC_MT6797
 	tristate "ASoC support for Mediatek MT6797 chip"
 	depends on ARCH_MEDIATEK
