@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* MT6739 DBI command-mode display path, as left on by the bootloader. */
 
+#include <linux/backlight.h>
 #include <linux/bitfield.h>
+#include <linux/delay.h>
 #include <linux/iopoll.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -46,6 +48,10 @@
 #define DBI_ROI_HEIGHT		GENMASK(26, 16)
 #define DBI_SCMD0		0xf80
 
+#define MIPI_DCS_ENTER_SLEEP_MODE	0x10
+#define MIPI_DCS_EXIT_SLEEP_MODE	0x11
+#define MIPI_DCS_SET_DISPLAY_OFF	0x28
+#define MIPI_DCS_SET_DISPLAY_ON		0x29
 #define MIPI_DCS_WRITE_MEMORY_START	0x2c
 
 struct mt6739_dbi {
@@ -56,6 +62,8 @@ struct mt6739_dbi {
 	void __iomem *ovl;
 	void __iomem *mutex;
 	void __iomem *dbi;
+	struct backlight_device *backlight;
+	bool asleep;
 };
 
 static struct mt6739_dbi *to_mt6739_dbi(struct drm_device *drm)
@@ -63,14 +71,21 @@ static struct mt6739_dbi *to_mt6739_dbi(struct drm_device *drm)
 	return container_of(drm, struct mt6739_dbi, drm);
 }
 
-static void mt6739_dbi_flush(struct mt6739_dbi *dbi, struct drm_framebuffer *fb)
+static void mt6739_dbi_wait_idle(struct mt6739_dbi *dbi)
 {
-	struct drm_gem_dma_object *gem = drm_fb_dma_get_gem_obj(fb, 0);
-	u32 sta, con;
+	u32 sta;
 
 	if (readl_poll_timeout(dbi->dbi + DBI_STA, sta, !(sta & DBI_STA_BUSY),
 			       100, 100000))
 		drm_err_once(&dbi->drm, "DBI stays busy\n");
+}
+
+static void mt6739_dbi_flush(struct mt6739_dbi *dbi, struct drm_framebuffer *fb)
+{
+	struct drm_gem_dma_object *gem = drm_fb_dma_get_gem_obj(fb, 0);
+	u32 con;
+
+	mt6739_dbi_wait_idle(dbi);
 
 	con = readl(dbi->ovl + OVL_L3_CON);
 	con &= ~(OVL_CON_CLRFMT | OVL_CON_AEN);
@@ -91,7 +106,29 @@ static void mt6739_dbi_enable(struct drm_simple_display_pipe *pipe,
 			      struct drm_crtc_state *crtc_state,
 			      struct drm_plane_state *plane_state)
 {
-	mt6739_dbi_flush(to_mt6739_dbi(pipe->crtc.dev), plane_state->fb);
+	struct mt6739_dbi *dbi = to_mt6739_dbi(pipe->crtc.dev);
+
+	if (dbi->asleep) {
+		mt6739_dbi_wait_idle(dbi);
+		writel(MIPI_DCS_EXIT_SLEEP_MODE, dbi->dbi + DBI_SCMD0);
+		msleep(120);
+		writel(MIPI_DCS_SET_DISPLAY_ON, dbi->dbi + DBI_SCMD0);
+		dbi->asleep = false;
+	}
+
+	mt6739_dbi_flush(dbi, plane_state->fb);
+	backlight_enable(dbi->backlight);
+}
+
+static void mt6739_dbi_disable(struct drm_simple_display_pipe *pipe)
+{
+	struct mt6739_dbi *dbi = to_mt6739_dbi(pipe->crtc.dev);
+
+	backlight_disable(dbi->backlight);
+	mt6739_dbi_wait_idle(dbi);
+	writel(MIPI_DCS_SET_DISPLAY_OFF, dbi->dbi + DBI_SCMD0);
+	writel(MIPI_DCS_ENTER_SLEEP_MODE, dbi->dbi + DBI_SCMD0);
+	dbi->asleep = true;
 }
 
 static void mt6739_dbi_update(struct drm_simple_display_pipe *pipe,
@@ -107,6 +144,7 @@ static void mt6739_dbi_update(struct drm_simple_display_pipe *pipe,
 
 static const struct drm_simple_display_pipe_funcs mt6739_dbi_pipe_funcs = {
 	.enable = mt6739_dbi_enable,
+	.disable = mt6739_dbi_disable,
 	.update = mt6739_dbi_update,
 };
 
@@ -175,6 +213,10 @@ static int mt6739_dbi_probe(struct platform_device *pdev)
 	dbi->dbi = devm_platform_ioremap_resource_byname(pdev, "dbi");
 	if (IS_ERR(dbi->dbi))
 		return PTR_ERR(dbi->dbi);
+
+	dbi->backlight = devm_of_find_backlight(dev);
+	if (IS_ERR(dbi->backlight))
+		return PTR_ERR(dbi->backlight);
 
 	size = readl(dbi->dbi + DBI_ROI_SIZE);
 	width = FIELD_GET(DBI_ROI_WIDTH, size);
