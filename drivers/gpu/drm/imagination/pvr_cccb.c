@@ -239,7 +239,8 @@ pvr_cccb_send_kccb_kick(struct pvr_device *pvr_dev,
 	};
 
 	if (pvr_cccb->ddk19) {
-		WARN_ON(pvr_ddk19_kick(pvr_dev, pvr_cccb->dm, cctx_fw_addr, pvr_cccb->write_offset));
+		WARN_ON(pvr_ddk19_kick(pvr_dev, pvr_cccb->dm, cctx_fw_addr, pvr_cccb->write_offset,
+				       hwrt));
 		return;
 	}
 
@@ -263,6 +264,14 @@ pvr_cccb_send_kccb_combined_kick(struct pvr_device *pvr_dev,
 	struct rogue_fwif_kccb_cmd cmd_kick = {
 		.cmd_type = ROGUE_FWIF_KCCB_CMD_COMBINED_GEOM_FRAG_KICK,
 	};
+
+	if (geom_cccb->ddk19) {
+		WARN_ON(pvr_ddk19_kick(pvr_dev, geom_cccb->dm, geom_ctx_fw_addr,
+				       geom_cccb->write_offset, hwrt));
+		WARN_ON(pvr_ddk19_kick(pvr_dev, frag_cccb->dm, frag_ctx_fw_addr,
+				       frag_cccb->write_offset, frag_is_pr ? NULL : hwrt));
+		return;
+	}
 
 	fill_cmd_kick_data(geom_cccb, geom_ctx_fw_addr, hwrt,
 			   &cmd_kick.cmd_data.combined_geom_frag_cmd_kick_data.geom_cmd_kick_data);

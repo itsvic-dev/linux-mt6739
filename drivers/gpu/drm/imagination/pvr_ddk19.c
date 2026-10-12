@@ -834,7 +834,8 @@ int pvr_ddk19_cleanup(struct pvr_device *pvr_dev, u32 type, struct pvr_fw_object
 	return err;
 }
 
-int pvr_ddk19_kick(struct pvr_device *pvr_dev, u32 dm, u32 ctx_fw_addr, u32 write_offset)
+int pvr_ddk19_kick(struct pvr_device *pvr_dev, u32 dm, u32 ctx_fw_addr, u32 write_offset,
+		   struct pvr_hwrt_data *hwrt)
 {
 	struct ddk19_fwif_kccb_cmd cmd = {
 		.cmd_type = DDK19_KCCB_CMD_KICK,
@@ -844,6 +845,16 @@ int pvr_ddk19_kick(struct pvr_device *pvr_dev, u32 dm, u32 ctx_fw_addr, u32 writ
 			.client_woff_update = write_offset,
 		},
 	};
+
+	if (hwrt && (dm == DDK19_DM_TA || dm == DDK19_DM_3D)) {
+		u32 offset = dm == DDK19_DM_TA ?
+			     offsetof(struct ddk19_fwif_hwrtdata, ta_cleanup_ctl) :
+			     offsetof(struct ddk19_fwif_hwrtdata, cleanup_ctl_3d);
+
+		pvr_fw_object_get_fw_addr_offset(hwrt->fw_obj, offset,
+						 &cmd.data.kick.cleanup_ctl_fw_addr[0]);
+		cmd.data.kick.num_cleanup_ctl = 1;
+	}
 
 	wmb();
 

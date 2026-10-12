@@ -35,7 +35,8 @@ int pvr_ddk19_mmu_flush(struct pvr_device *pvr_dev, u32 flags);
 void pvr_ddk19_debugfs_init(struct pvr_device *pvr_dev, struct dentry *root);
 int pvr_ddk19_cleanup(struct pvr_device *pvr_dev, u32 type, struct pvr_fw_object *fw_obj,
 		      u32 offset);
-int pvr_ddk19_kick(struct pvr_device *pvr_dev, u32 dm, u32 ctx_fw_addr, u32 write_offset);
+int pvr_ddk19_kick(struct pvr_device *pvr_dev, u32 dm, u32 ctx_fw_addr, u32 write_offset,
+		   struct pvr_hwrt_data *hwrt);
 void pvr_ddk19_cccb_write(struct pvr_cccb *cccb, u32 cmd_type, u32 cmd_size, void *cmd_data,
 			  u32 ext_job_ref, u32 int_job_ref);
 u32 pvr_ddk19_fw_ctx_size(enum drm_pvr_ctx_type type);
