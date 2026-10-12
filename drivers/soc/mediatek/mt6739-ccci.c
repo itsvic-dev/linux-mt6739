@@ -11,9 +11,12 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/random.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
 #include <linux/sizes.h>
+#include <linux/timekeeping.h>
+#include <linux/unaligned.h>
 
 #define CCIF_BUSY		0x04
 #define CCIF_TCHNUM		0x0c
@@ -23,10 +26,77 @@
 #define CCIF_SRAM_SIZE		0x200
 #define CCIF_SRAM_DL_HEADER	0x100
 #define CCIF_SRAM_MD_FEATURE	0x110
+#define CCIF_SRAM_UP_HEADER	0x1f0
+#define CCIF_SRAM_AP_FEATURE	0x200
 #define CCIF_CH_SRAM		15
+#define CCIF_CH_EXCEPTION	16
+#define CCIF_CH_EX_CLEARQ	17
+#define CCIF_CH_EX_CLEARQ_DONE	18
+#define CCIF_RINGQ_NUM		8
 
 #define MD_FEATURE_PATTERN	0x49434343
+#define AP_FEATURE_PATTERN	0x43434349
 #define MD_FEATURE_COUNT	64
+#define MD_INIT_CHK_ID		0x5555ffff
+#define CCCI_CONTROL_RX		0
+#define CCCI_CONTROL_TX		1
+
+#define FEATURE_NOT_EXIST	0
+#define FEATURE_NOT_SUPPORT	1
+#define FEATURE_MUST		2
+#define FEATURE_OPTIONAL	3
+#define FEATURE_BACKWARD	4
+
+enum {
+	F_BOOT_INFO = 0,
+	F_EXCEPTION_SHM = 1,
+	F_CCIF_SHM = 2,
+	F_HIF_DMA_REMAP = 5,
+	F_RANDOM_SEED = 7,
+	F_GPS_COCLOCK = 8,
+	F_SBP_ID = 9,
+	F_MISC_CCCI = 10,
+	F_CLIB_TIME = 11,
+	F_C2K = 12,
+	F_MD_IMAGE_START = 13,
+	F_CCB_SHM = 15,
+	F_DHL_RAW_SHM = 16,
+	F_NETD_SHM = 17,
+	F_USB_SHM = 18,
+	F_EE_AFTER_EPOF = 19,
+	F_CCMNI_MTU = 20,
+	F_LWA_SHM = 25,
+	F_AUDIO_RAW_SHM = 26,
+	F_MULTI_MD_MPU = 27,
+	F_CCISM_EXP_SHM = 28,
+	F_PHY_CAPTURE = 29,
+	F_MD_CONSYS_SHM = 30,
+};
+
+#define SMEM_MD_VIEW		0x40000000
+#define SMEM_EXCEPTION_SIZE	SZ_64K
+#define SMEM_RUNTIME		0xe800
+#define SMEM_RUNTIME_SIZE	0x800
+#define SMEM_DBM		0xff50
+#define SMEM_DBM_SIZE		160
+#define SMEM_DBM_GUARD		0x44444444
+#define SMEM_CCB_CTRL		0x18000
+#define SMEM_NETD		0x19000
+#define SMEM_USB		0x1a000
+#define SMEM_AUDIO		0x1b000
+#define SMEM_AUDIO_SIZE		(52 * SZ_1K)
+#define SMEM_CCISM		0x28000
+#define SMEM_CCISM_EXP		0xd8400
+#define SMEM_CCISM_EXP_SIZE	(121 * SZ_1K)
+#define SMEM_SIB		SZ_1M
+#define CCB_DATA_SIZE		SZ_2M
+#define CCMNI_MTU		(3584 - 16)
+
+#define RING_HEADER		0xee0000ee
+#define RING_FOOTER		0xff0000ff
+#define RING_CTL_LEN		40
+#define PKT_HEADER		0xaabbaabb
+#define PKT_FOOTER		0xccddeeff
 
 #define INFRA_CCIF_CG_CLR	0x08c
 #define INFRA_RST0_SET		0x140
@@ -66,6 +136,11 @@
 #define AP_PLL_CON0_LPF		BIT(1)
 #define DVFSRC_MD_SRCLKENA	0x18
 #define DVFSRC_MD_SRCLKENA_EN	(3 << 26)
+
+#define CLDMA_SO_CFG		0x400
+#define CLDMA_SO_CFG_EN		BIT(0)
+#define CLDMA_DL_MTU		0x418
+#define CLDMA_MTU		3584
 
 #define MD_CFG_BOOT_SLAVE	0x24
 #define MD_RGU_WDT		0x100
@@ -110,8 +185,81 @@ struct ccci_header {
 	u32 reserved;
 } __packed;
 
+struct ccci_runtime_feature {
+	u8 id;
+	u8 support;
+	u8 reserved[2];
+	u32 data_len;
+} __packed;
+
+struct ap_query_md_feature {
+	u32 head;
+	u8 feature[MD_FEATURE_COUNT];
+	u32 share_memory_support;
+	u32 ap_runtime_addr;
+	u32 ap_runtime_size;
+	u32 md_runtime_addr;
+	u32 md_runtime_size;
+	u32 noncached_mpu_addr;
+	u32 noncached_mpu_size;
+	u32 cached_mpu_addr;
+	u32 cached_mpu_size;
+	u32 reserved[12];
+	u32 tail;
+} __packed;
+
+struct ccci_ring_ctl {
+	u32 read;
+	u32 write;
+	u32 length;
+};
+
+struct mt6739_ccci_ring {
+	struct ccci_ring_ctl *rx;
+	struct ccci_ring_ctl *tx;
+	u8 *rx_buf;
+	u8 *tx_buf;
+};
+
+static const u32 ring_rx_size[CCIF_RINGQ_NUM] = {
+	80 * SZ_1K, 80 * SZ_1K, 40 * SZ_1K, 80 * SZ_1K, 20 * SZ_1K, 20 * SZ_1K, 64 * SZ_1K, 0,
+};
+static const u32 ring_tx_size[CCIF_RINGQ_NUM] = {
+	128 * SZ_1K, 40 * SZ_1K, 8 * SZ_1K, 40 * SZ_1K, 20 * SZ_1K, 20 * SZ_1K, 64 * SZ_1K, 0,
+};
+static const u32 ring_exp_size[CCIF_RINGQ_NUM] = {
+	12 * SZ_1K, 32 * SZ_1K, 8 * SZ_1K, 0, 0, 0, 8 * SZ_1K, 0,
+};
+
+/* The AP side of the feature negotiation, as in the vendor driver for MT6739. */
+static const u8 ap_feature_mask[MD_FEATURE_COUNT] = {
+	[F_BOOT_INFO] = FEATURE_MUST,
+	[F_EXCEPTION_SHM] = FEATURE_MUST,
+	[F_CCIF_SHM] = FEATURE_MUST,
+	[F_HIF_DMA_REMAP] = FEATURE_MUST,
+	[F_RANDOM_SEED] = FEATURE_MUST,
+	[F_GPS_COCLOCK] = FEATURE_MUST,
+	[F_SBP_ID] = FEATURE_MUST,
+	[F_MISC_CCCI] = FEATURE_MUST,
+	[F_CLIB_TIME] = FEATURE_MUST,
+	[F_C2K] = FEATURE_MUST,
+	[F_MD_IMAGE_START] = FEATURE_OPTIONAL,
+	[F_CCB_SHM] = FEATURE_MUST,
+	[F_DHL_RAW_SHM] = FEATURE_MUST,
+	[F_NETD_SHM] = FEATURE_MUST,
+	[F_USB_SHM] = FEATURE_MUST,
+	[F_EE_AFTER_EPOF] = FEATURE_MUST,
+	[F_CCMNI_MTU] = FEATURE_MUST,
+	[F_LWA_SHM] = FEATURE_MUST,
+	[F_AUDIO_RAW_SHM] = FEATURE_MUST,
+	[F_MULTI_MD_MPU] = FEATURE_MUST,
+	[F_CCISM_EXP_SHM] = FEATURE_MUST,
+	[F_MD_CONSYS_SHM] = FEATURE_MUST,
+};
+
 struct mt6739_ccci {
 	struct device *dev;
+	void __iomem *cldma_ao;
 	void __iomem *ap_ccif;
 	void __iomem *md_ccif;
 	void __iomem *boot_stats;
@@ -128,7 +276,17 @@ struct mt6739_ccci {
 	int num_clks;
 	struct regulator *vmodem;
 	struct ccci_smem_layout smem_layout;
+	u64 ccb_addr;
+	u32 ccb_size;
+	u32 cache_offset;
+	u32 c2k_lte_mode;
 	void *smem;
+	struct mt6739_ccci_ring rings[CCIF_RINGQ_NUM];
+	struct mt6739_ccci_ring exp_rings[CCIF_RINGQ_NUM];
+	bool in_exception;
+	struct debugfs_blob_wrapper smem_blob;
+	struct debugfs_blob_wrapper ccb_blob;
+	u32 ccism_size;
 	struct mutex lock;
 	bool started;
 };
@@ -160,49 +318,342 @@ static int mt6739_ccci_parse_lk_info(struct mt6739_ccci *md)
 		return -ENOMEM;
 
 	for (i = 0; i < info.tag_num && off + sizeof(tag) <= info.size; i++) {
+		void *data;
+
 		memcpy(&tag, area + off, sizeof(tag));
 		tag.name[LK_TAG_NAME_LEN - 1] = '\0';
-		dev_dbg(dev, "LK tag %s: offset %#x size %#x\n", tag.name, tag.data_offset, tag.data_size);
-		if (!strcmp(tag.name, "smem_layout") && tag.data_size >= sizeof(md->smem_layout) &&
-		    tag.data_offset + sizeof(md->smem_layout) <= info.size) {
-			memcpy(&md->smem_layout, area + tag.data_offset, sizeof(md->smem_layout));
-			have_layout = true;
-		}
 		off = tag.next_offset;
+		if (tag.data_offset + tag.data_size > info.size)
+			continue;
+		data = area + tag.data_offset;
+		dev_dbg(dev, "LK tag %s: size %#x first word %#x\n", tag.name, tag.data_size,
+			tag.data_size >= 4 ? get_unaligned_le32(data) : 0);
+
+		if (!strcmp(tag.name, "smem_layout") && tag.data_size >= sizeof(md->smem_layout)) {
+			memcpy(&md->smem_layout, data, sizeof(md->smem_layout));
+			have_layout = true;
+		} else if (!strcmp(tag.name, "ccb_info") && tag.data_size >= 12) {
+			md->ccb_addr = get_unaligned_le64(data);
+			md->ccb_size = get_unaligned_le32(data + 8);
+		} else if (!strcmp(tag.name, "md1_smem_cahce_offset") && tag.data_size >= 4) {
+			md->cache_offset = get_unaligned_le32(data);
+		} else if (!strcmp(tag.name, "opt_c2k_lte_mode") && tag.data_size >= 4) {
+			md->c2k_lte_mode = get_unaligned_le32(data);
+		}
 	}
 	memunmap(area);
 
-	if (!have_layout)
-		return dev_err_probe(dev, -ENODEV, "no smem_layout tag\n");
-	dev_info(dev, "shared memory %#llx size %#x, AP-MD1 %#x+%#x\n",
+	if (!have_layout || !md->ccb_addr || !md->cache_offset)
+		return dev_err_probe(dev, -ENODEV, "LK tags incomplete\n");
+	dev_info(dev, "shared memory %#llx size %#x, AP-MD1 %#x+%#x, CCB %#llx+%#x, C2K mode %u\n",
 		 md->smem_layout.base, md->smem_layout.total_size,
-		 md->smem_layout.ap_md1_offset, md->smem_layout.ap_md1_size);
+		 md->smem_layout.ap_md1_offset, md->smem_layout.ap_md1_size,
+		 md->ccb_addr, md->ccb_size, md->c2k_lte_mode);
 	return 0;
+}
+
+/* The CCIF SRAM takes only 32-bit accesses: a byte write clears the rest of the word. */
+static void mt6739_ccci_sram_clear(void __iomem *dst, size_t len)
+{
+	size_t i;
+
+	for (i = 0; i < len; i += 4)
+		writel(0, dst + i);
+}
+
+static u32 mt6739_ccci_smem_md(struct mt6739_ccci *md, u32 off)
+{
+	return SMEM_MD_VIEW + ((md->smem_layout.base + md->smem_layout.ap_md1_offset) &
+			       (SZ_32M - 1)) + off;
+}
+
+static u32 mt6739_ccci_ccb_md(struct mt6739_ccci *md)
+{
+	return SMEM_MD_VIEW + md->cache_offset + (md->ccb_addr & (SZ_1M - 1));
+}
+
+static u32 mt6739_ccci_create_rings(struct mt6739_ccci *md, u32 off, const u32 *rx_size,
+				    const u32 *tx_size, struct mt6739_ccci_ring *rings)
+{
+	u32 start = off;
+	int i;
+
+	for (i = 0; i < CCIF_RINGQ_NUM; i++) {
+		u32 len = RING_CTL_LEN + rx_size[i] + tx_size[i];
+		u32 *buf = md->smem + off;
+		struct ccci_ring_ctl *ctl = (void *)(buf + 2);
+
+		memset(buf, 0, len);
+		buf[0] = RING_HEADER;
+		buf[1] = RING_HEADER;
+		buf[len / 4 - 2] = RING_FOOTER;
+		buf[len / 4 - 1] = RING_FOOTER;
+		ctl[0].length = rx_size[i];
+		ctl[1].length = tx_size[i];
+		if (rings) {
+			rings[i].rx = &ctl[0];
+			rings[i].tx = &ctl[1];
+			rings[i].rx_buf = (u8 *)&ctl[2];
+			rings[i].tx_buf = rings[i].rx_buf + rx_size[i];
+		}
+		off += len;
+	}
+	return off - start;
+}
+
+static void mt6739_ccci_ring_copy(void *dst, const u8 *buf, u32 pos, u32 n, u32 len)
+{
+	u32 first = min(n, len - pos);
+
+	memcpy(dst, buf + pos, first);
+	memcpy(dst + first, buf, n - first);
+}
+
+static void mt6739_ccci_ring_rx(struct mt6739_ccci *md, int q)
+{
+	struct mt6739_ccci_ring *ring = md->in_exception ? &md->exp_rings[q] : &md->rings[q];
+	u8 payload[512];
+	u32 len = ring->rx->length;
+	struct ccci_header hdr;
+	u32 read, write, size, pkt[2], total;
+
+	while (len) {
+		read = READ_ONCE(ring->rx->read);
+		write = READ_ONCE(ring->rx->write);
+		size = (write + len - read) % len;
+		if (size < 16 + sizeof(hdr))
+			break;
+		dma_rmb();
+		mt6739_ccci_ring_copy(pkt, ring->rx_buf, read, sizeof(pkt), len);
+		total = ALIGN(16 + pkt[1], 8);
+		if (pkt[0] != PKT_HEADER || pkt[1] < sizeof(hdr) || total > size) {
+			dev_err(md->dev, "queue %d: bad packet %#x len %u (read %u write %u)\n",
+				q, pkt[0], pkt[1], read, write);
+			break;
+		}
+		mt6739_ccci_ring_copy(&hdr, ring->rx_buf, (read + 8) % len, sizeof(hdr), len);
+		dev_info(md->dev, "queue %d: channel %u data %#x %#x reserved %#x len %u\n",
+			 q, hdr.channel, hdr.data[0], hdr.data[1], hdr.reserved, pkt[1]);
+		if (md->in_exception && pkt[1] > sizeof(hdr)) {
+			u32 n = min_t(u32, pkt[1] - sizeof(hdr), sizeof(payload));
+
+			mt6739_ccci_ring_copy(payload, ring->rx_buf, (read + 8 + sizeof(hdr)) % len, n, len);
+			print_hex_dump(KERN_INFO, "md ee: ", DUMP_PREFIX_OFFSET, 16, 1, payload, n, true);
+		}
+		WRITE_ONCE(ring->rx->read, (read + total) % len);
+	}
+}
+
+static void mt6739_ccci_add_feature(void **p, u8 id, u8 support, const void *data, u32 len)
+{
+	struct ccci_runtime_feature f = { .id = id, .support = support, .data_len = len };
+
+	memcpy(*p, &f, sizeof(f));
+	*p += sizeof(f);
+	memcpy(*p, data, len);
+	*p += len;
+}
+
+static int mt6739_ccci_runtime_data(struct mt6739_ccci *md, const u8 *md_feature)
+{
+	void *p = md->smem + SMEM_RUNTIME;
+	u32 d[4];
+	int i;
+
+	for (i = 0; i < MD_FEATURE_COUNT; i++) {
+		u8 md_mask = md_feature[i] & 0xf, md_ver = md_feature[i] >> 4;
+		u8 ap_mask = ap_feature_mask[i];
+		u8 support = 0;
+		u32 len = 0;
+
+		if (md_mask == FEATURE_MUST && ap_mask < FEATURE_MUST) {
+			dev_err(md->dev, "MD needs feature %d, AP does not have it\n", i);
+			return -EINVAL;
+		}
+		if (md_mask == FEATURE_NOT_EXIST || md_mask == FEATURE_MUST)
+			support = md_feature[i];
+		else if (md_mask == FEATURE_OPTIONAL)
+			support = md_ver == 0 && ap_mask >= FEATURE_MUST ? FEATURE_MUST :
+									   FEATURE_NOT_SUPPORT;
+		else if (md_mask == FEATURE_BACKWARD)
+			support = ap_mask >= FEATURE_MUST ? FEATURE_MUST : FEATURE_NOT_SUPPORT;
+
+		memset(d, 0, sizeof(d));
+		if ((support & 0xf) == FEATURE_MUST) {
+			len = 2 * sizeof(u32);
+			switch (i) {
+			case F_BOOT_INFO:
+				d[0] = CCCI_CONTROL_RX;
+				len = sizeof(d);
+				break;
+			case F_EXCEPTION_SHM:
+				d[0] = mt6739_ccci_smem_md(md, 0);
+				d[1] = SMEM_EXCEPTION_SIZE;
+				break;
+			case F_CCIF_SHM:
+				d[0] = mt6739_ccci_smem_md(md, SMEM_CCISM);
+				d[1] = md->ccism_size;
+				break;
+			case F_CCB_SHM:
+				d[0] = mt6739_ccci_smem_md(md, SMEM_CCB_CTRL);
+				d[1] = SZ_4K;
+				d[2] = mt6739_ccci_ccb_md(md);
+				d[3] = CCB_DATA_SIZE;
+				len = sizeof(d);
+				break;
+			case F_DHL_RAW_SHM:
+				d[0] = mt6739_ccci_ccb_md(md) + CCB_DATA_SIZE;
+				d[1] = md->ccb_size - CCB_DATA_SIZE;
+				break;
+			case F_NETD_SHM:
+				d[0] = mt6739_ccci_smem_md(md, SMEM_NETD);
+				d[1] = SZ_4K;
+				break;
+			case F_USB_SHM:
+				d[0] = mt6739_ccci_smem_md(md, SMEM_USB);
+				d[1] = SZ_4K;
+				break;
+			case F_AUDIO_RAW_SHM:
+				d[0] = mt6739_ccci_smem_md(md, SMEM_AUDIO);
+				d[1] = SMEM_AUDIO_SIZE;
+				break;
+			case F_CCISM_EXP_SHM:
+				d[0] = mt6739_ccci_smem_md(md, SMEM_CCISM_EXP);
+				d[1] = SMEM_CCISM_EXP_SIZE;
+				break;
+			case F_LWA_SHM:
+			case F_MD_CONSYS_SHM:
+				d[0] = mt6739_ccci_smem_md(md, SMEM_SIB);
+				break;
+			case F_MULTI_MD_MPU:
+				len = 0;
+				break;
+			case F_RANDOM_SEED:
+				d[0] = get_random_u32();
+				len = sizeof(d);
+				break;
+			case F_MISC_CCCI:
+				d[0] = 0;
+				len = sizeof(d);
+				break;
+			case F_CLIB_TIME:
+				d[0] = lower_32_bits(ktime_get_real_seconds());
+				d[1] = upper_32_bits(ktime_get_real_seconds());
+				len = sizeof(d);
+				break;
+			case F_C2K:
+				if (md->c2k_lte_mode == 1)
+					d[0] = BIT(1);
+				else if (md->c2k_lte_mode == 2)
+					d[0] = BIT(2);
+				len = sizeof(d);
+				break;
+			case F_CCMNI_MTU:
+				d[0] = CCMNI_MTU;
+				len = sizeof(u32);
+				break;
+			default:
+				len = sizeof(d);
+				break;
+			}
+		}
+		mt6739_ccci_add_feature(&p, i, support, d, len);
+	}
+	if (p - (md->smem + SMEM_RUNTIME) > SMEM_RUNTIME_SIZE)
+		dev_warn(md->dev, "runtime data overflows its region\n");
+	return 0;
+}
+
+static void mt6739_ccci_send_runtime_data(struct mt6739_ccci *md)
+{
+	struct ap_query_md_feature ap = {
+		.head = AP_FEATURE_PATTERN,
+		.feature[1] = 0x10,
+		.share_memory_support = 2,
+		.ap_runtime_addr = mt6739_ccci_smem_md(md, SMEM_RUNTIME),
+		.ap_runtime_size = SMEM_RUNTIME_SIZE,
+		.md_runtime_addr = mt6739_ccci_smem_md(md, SMEM_RUNTIME + SMEM_RUNTIME_SIZE),
+		.md_runtime_size = SMEM_RUNTIME_SIZE,
+		.noncached_mpu_addr = mt6739_ccci_smem_md(md, 0),
+		.noncached_mpu_size = md->smem_layout.ap_md1_size,
+		.cached_mpu_addr = mt6739_ccci_ccb_md(md),
+		.cached_mpu_size = md->ccb_size,
+		.tail = AP_FEATURE_PATTERN,
+	};
+	struct ccci_header hdr = {
+		.data[1] = sizeof(hdr) + sizeof(ap),
+		.channel = CCCI_CONTROL_TX,
+		.reserved = MD_INIT_CHK_ID,
+	};
+	u32 *dbm = md->smem + SMEM_DBM;
+
+	__iowrite32_copy(md->ap_ccif + CCIF_SRAM_UP_HEADER, &hdr, sizeof(hdr) / 4);
+	__iowrite32_copy(md->ap_ccif + CCIF_SRAM_AP_FEATURE, &ap, sizeof(ap) / 4);
+
+	memset(dbm, 0, SMEM_DBM_SIZE + 16);
+	dbm[0] = SMEM_DBM_GUARD;
+	dbm[1] = SMEM_DBM_GUARD;
+	dbm[SMEM_DBM_SIZE / 4 + 2] = SMEM_DBM_GUARD;
+	dbm[SMEM_DBM_SIZE / 4 + 3] = SMEM_DBM_GUARD;
+
+	wmb();
+	writel(BIT(CCIF_CH_SRAM), md->ap_ccif + CCIF_BUSY);
+	writel(CCIF_CH_SRAM, md->ap_ccif + CCIF_TCHNUM);
+}
+
+static void mt6739_ccci_hs1(struct mt6739_ccci *md)
+{
+	u8 feature[MD_FEATURE_COUNT] __aligned(4);
+	struct ccci_header hdr;
+	u32 head, tail;
+
+	__ioread32_copy(&hdr, md->ap_ccif + CCIF_SRAM_DL_HEADER, sizeof(hdr) / 4);
+	head = readl(md->ap_ccif + CCIF_SRAM_MD_FEATURE);
+	__ioread32_copy(feature, md->ap_ccif + CCIF_SRAM_MD_FEATURE + 4, sizeof(feature) / 4);
+	tail = readl(md->ap_ccif + CCIF_SRAM_MD_FEATURE + 4 + MD_FEATURE_COUNT);
+	dev_info(md->dev, "HS1: data %#x %#x channel %u reserved %#x, boot stats %#x %#x\n",
+		 hdr.data[0], hdr.data[1], hdr.channel, hdr.reserved,
+		 readl(md->boot_stats), readl(md->boot_stats + 4));
+
+	if (hdr.reserved != MD_INIT_CHK_ID || head != MD_FEATURE_PATTERN ||
+	    tail != MD_FEATURE_PATTERN) {
+		dev_err(md->dev, "bad HS1 pattern %#x/%#x\n", head, tail);
+		return;
+	}
+	if (mt6739_ccci_runtime_data(md, feature))
+		return;
+	mt6739_ccci_send_runtime_data(md);
+	dev_info(md->dev, "runtime data sent\n");
 }
 
 static irqreturn_t mt6739_ccci_irq(int irq, void *data)
 {
 	struct mt6739_ccci *md = data;
 	u32 ch = readl(md->ap_ccif + CCIF_RCHNUM);
-	u8 feature[MD_FEATURE_COUNT];
-	struct ccci_header hdr;
-	u32 head, tail;
+	int q;
 
 	writel(ch, md->ap_ccif + CCIF_ACK);
-	dev_info(md->dev, "CCIF irq %d channels %#x\n", irq, ch);
+	dev_dbg(md->dev, "CCIF irq %d channels %#x\n", irq, ch);
 
-	if (ch & BIT(CCIF_CH_SRAM)) {
-		memcpy_fromio(&hdr, md->ap_ccif + CCIF_SRAM_DL_HEADER, sizeof(hdr));
-		head = readl(md->ap_ccif + CCIF_SRAM_MD_FEATURE);
-		memcpy_fromio(feature, md->ap_ccif + CCIF_SRAM_MD_FEATURE + 4, sizeof(feature));
-		tail = readl(md->ap_ccif + CCIF_SRAM_MD_FEATURE + 4 + MD_FEATURE_COUNT);
-		dev_info(md->dev, "HS1: data %#x %#x channel %u reserved %#x, pattern %#x/%#x\n",
-			 hdr.data[0], hdr.data[1], hdr.channel, hdr.reserved, head, tail);
-		print_hex_dump(KERN_INFO, "md feature: ", DUMP_PREFIX_OFFSET, 16, 1,
-			       feature, sizeof(feature), false);
-		dev_info(md->dev, "boot stats %#x %#x\n",
-			 readl(md->boot_stats), readl(md->boot_stats + 4));
+	if (ch & BIT(CCIF_CH_SRAM))
+		mt6739_ccci_hs1(md);
+	for (q = 0; q < CCIF_RINGQ_NUM; q++)
+		if (ch & BIT(q))
+			mt6739_ccci_ring_rx(md, q);
+	if (ch & BIT(CCIF_CH_EXCEPTION)) {
+		dev_err(md->dev, "MD exception, boot stats %#x %#x, seq error %#x\n",
+			readl(md->boot_stats), readl(md->boot_stats + 4),
+			*(u32 *)(md->smem + 0x34));
+		writel(BIT(CCIF_CH_EXCEPTION), md->ap_ccif + CCIF_BUSY);
+		writel(CCIF_CH_EXCEPTION, md->ap_ccif + CCIF_TCHNUM);
 	}
+	if (ch & BIT(CCIF_CH_EX_CLEARQ_DONE)) {
+		md->in_exception = true;
+		writel(BIT(CCIF_CH_EX_CLEARQ), md->ap_ccif + CCIF_BUSY);
+		writel(CCIF_CH_EX_CLEARQ, md->ap_ccif + CCIF_TCHNUM);
+	}
+	if (ch & GENMASK(23, CCIF_CH_EXCEPTION + 1))
+		dev_warn(md->dev, "CCIF exception channels %#x\n", ch);
 	return IRQ_HANDLED;
 }
 
@@ -293,10 +744,7 @@ static int mt6739_ccci_pll_init(struct mt6739_ccci *md)
 
 static void mt6739_ccci_clear_smem(struct mt6739_ccci *md)
 {
-	/* CCB control (0x18000) and the audio region (0x1b000..0x28000) keep their contents. */
-	memset(md->smem, 0, 0x18000);
-	memset(md->smem + 0x19000, 0, 0x2000);
-	memset(md->smem + 0x28000, 0, md->smem_layout.ap_md1_size - 0x28000);
+	memset(md->smem, 0, md->smem_layout.ap_md1_size);
 }
 
 static int mt6739_ccci_start(struct mt6739_ccci *md)
@@ -314,11 +762,15 @@ static int mt6739_ccci_start(struct mt6739_ccci *md)
 		return ret;
 
 	mt6739_ccci_clear_smem(md);
+	md->ccism_size = mt6739_ccci_create_rings(md, SMEM_CCISM, ring_rx_size, ring_tx_size,
+						  md->rings);
+	mt6739_ccci_create_rings(md, SMEM_CCISM_EXP, ring_exp_size, ring_exp_size, md->exp_rings);
+	wmb();
 
 	regmap_write(infra, INFRA_RST1_SET, INFRA_RST1_CCIF);
 	regmap_write(infra, INFRA_RST1_CLR, INFRA_RST1_CCIF);
-	memset_io(md->ap_ccif + CCIF_SRAM, 0, CCIF_SRAM_SIZE);
-	memset_io(md->md_ccif + CCIF_SRAM, 0, CCIF_SRAM_SIZE);
+	mt6739_ccci_sram_clear(md->ap_ccif + CCIF_SRAM, CCIF_SRAM_SIZE);
+	mt6739_ccci_sram_clear(md->md_ccif + CCIF_SRAM, CCIF_SRAM_SIZE);
 	writel(~0, md->ap_ccif + CCIF_ACK);
 
 	regmap_write(infra, INFRA_RST0_SET, INFRA_RST0_CLDMA_AO);
@@ -353,6 +805,9 @@ static int mt6739_ccci_start(struct mt6739_ccci *md)
 	ret = mt6739_ccci_pll_init(md);
 	if (ret)
 		goto err_reg;
+
+	writel(CLDMA_MTU, md->cldma_ao + CLDMA_DL_MTU);
+	writel(readl(md->cldma_ao + CLDMA_SO_CFG) | CLDMA_SO_CFG_EN, md->cldma_ao + CLDMA_SO_CFG);
 
 	writel(MD_RGU_WDT_OFF, md->md_rgu + MD_RGU_WDT);
 	writel(1, md->md_cfg + MD_CFG_BOOT_SLAVE);
@@ -424,7 +879,7 @@ static void __iomem *mt6739_ccci_map_shared(struct platform_device *pdev, const 
 
 static int mt6739_ccci_probe(struct platform_device *pdev)
 {
-	static const char * const own[] = { "ap-ccif", "md-ccif", "boot-stats", "md-cfg",
+	static const char * const own[] = { "cldma-ao", "ap-ccif", "md-ccif", "boot-stats", "md-cfg",
 					     "md-rgu", "md-pll", "md-clksw" };
 	static const char * const shared[] = { "topckgen", "apmixed", "dvfsrc" };
 	struct device *dev = &pdev->dev;
@@ -444,13 +899,14 @@ static int mt6739_ccci_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	own_base[0] = &md->ap_ccif;
-	own_base[1] = &md->md_ccif;
-	own_base[2] = &md->boot_stats;
-	own_base[3] = &md->md_cfg;
-	own_base[4] = &md->md_rgu;
-	own_base[5] = &md->md_pll;
-	own_base[6] = &md->md_clksw;
+	own_base[0] = &md->cldma_ao;
+	own_base[1] = &md->ap_ccif;
+	own_base[2] = &md->md_ccif;
+	own_base[3] = &md->boot_stats;
+	own_base[4] = &md->md_cfg;
+	own_base[5] = &md->md_rgu;
+	own_base[6] = &md->md_pll;
+	own_base[7] = &md->md_clksw;
 	for (i = 0; i < ARRAY_SIZE(own); i++) {
 		*own_base[i] = devm_platform_ioremap_resource_byname(pdev, own[i]);
 		if (IS_ERR(*own_base[i]))
@@ -501,6 +957,14 @@ static int mt6739_ccci_probe(struct platform_device *pdev)
 	dir = debugfs_create_dir("mt6739-ccci", NULL);
 	debugfs_create_file("start", 0200, dir, md, &mt6739_ccci_start_fops);
 	debugfs_create_file("status", 0400, dir, md, &mt6739_ccci_status_fops);
+	md->smem_blob.data = md->smem;
+	md->smem_blob.size = md->smem_layout.ap_md1_size;
+	debugfs_create_blob("smem", 0400, dir, &md->smem_blob);
+	md->ccb_blob.data = devm_memremap(dev, md->ccb_addr, md->ccb_size, MEMREMAP_WC);
+	if (!IS_ERR(md->ccb_blob.data)) {
+		md->ccb_blob.size = md->ccb_size;
+		debugfs_create_blob("ccb", 0400, dir, &md->ccb_blob);
+	}
 	platform_set_drvdata(pdev, dir);
 	return 0;
 }
