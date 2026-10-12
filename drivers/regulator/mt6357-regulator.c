@@ -386,10 +386,10 @@ static struct mt6357_regulator_info mt6357_regulators[] = {
 
 	MT6357_LDO1("ldo-vsram-proc", VSRAM_PROC, 518750, 1312500, 6250,
 		   buck_volt_range1, MT6357_LDO_VSRAM_PROC_CON0,
-		   MT6357_LDO_VSRAM_CON0, 0x7f00),
+		   MT6357_LDO_VSRAM_CON0, 0x7f),
 	MT6357_LDO1("ldo-vsram-others", VSRAM_OTHERS, 518750, 1312500, 6250,
 		   buck_volt_range1, MT6357_LDO_VSRAM_OTHERS_CON0,
-		   MT6357_LDO_VSRAM_CON1, 0x7f00),
+		   MT6357_LDO_VSRAM_CON1, 0x7f),
 
 	MT6357_REG_FIXED("ldo-vaud28", VAUD28, 2800000),
 	MT6357_REG_FIXED("ldo-vaux18", VAUX18, 1800000),
