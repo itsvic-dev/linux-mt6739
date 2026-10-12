@@ -4,6 +4,7 @@
 #include <linux/clk-provider.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/platform_device.h>
 
 #include "clk-gate.h"
@@ -624,6 +625,74 @@ free_data:
 	return r;
 }
 
+static const struct mtk_gate_regs audio0_cg_regs = {
+	.set_ofs = 0x0,
+	.clr_ofs = 0x0,
+	.sta_ofs = 0x0,
+};
+
+static const struct mtk_gate_regs audio1_cg_regs = {
+	.set_ofs = 0x4,
+	.clr_ofs = 0x4,
+	.sta_ofs = 0x4,
+};
+
+#define GATE_AUDIO0(_id, _name, _parent, _shift)		\
+	GATE_MTK(_id, _name, _parent, &audio0_cg_regs, _shift,	\
+		 &mtk_clk_gate_ops_no_setclr)
+
+#define GATE_AUDIO1(_id, _name, _parent, _shift)		\
+	GATE_MTK(_id, _name, _parent, &audio1_cg_regs, _shift,	\
+		 &mtk_clk_gate_ops_no_setclr)
+
+static const struct mtk_gate audio_clks[] = {
+	GATE_AUDIO0(CLK_AUDIO_AFE, "aud_afe", "audio_sel", 2),
+	GATE_AUDIO0(CLK_AUDIO_22M, "aud_22m", "aud_engen1_sel", 8),
+	GATE_AUDIO0(CLK_AUDIO_APLL_TUNER, "aud_apll_tuner", "aud_engen1_sel", 19),
+	GATE_AUDIO0(CLK_AUDIO_ADC, "aud_adc", "audio_sel", 24),
+	GATE_AUDIO0(CLK_AUDIO_DAC, "aud_dac", "audio_sel", 25),
+	GATE_AUDIO0(CLK_AUDIO_DAC_PREDIS, "aud_dac_predis", "audio_sel", 26),
+	GATE_AUDIO0(CLK_AUDIO_TML, "aud_tml", "audio_sel", 27),
+	GATE_AUDIO1(CLK_AUDIO_I2S1_BCLK, "aud_i2s1_bclk", "audio_sel", 4),
+	GATE_AUDIO1(CLK_AUDIO_I2S2_BCLK, "aud_i2s2_bclk", "audio_sel", 5),
+	GATE_AUDIO1(CLK_AUDIO_I2S3_BCLK, "aud_i2s3_bclk", "audio_sel", 6),
+	GATE_AUDIO1(CLK_AUDIO_I2S4_BCLK, "aud_i2s4_bclk", "audio_sel", 7),
+};
+
+static int clk_mt6739_audio_probe(struct platform_device *pdev)
+{
+	struct device_node *node = pdev->dev.of_node;
+	struct clk_hw_onecell_data *clk_data;
+	int r;
+
+	clk_data = mtk_alloc_clk_data(CLK_AUDIO_NR_CLK);
+	if (!clk_data)
+		return -ENOMEM;
+
+	r = mtk_clk_register_gates(&pdev->dev, node, audio_clks,
+				   ARRAY_SIZE(audio_clks), clk_data);
+	if (r)
+		goto free_data;
+
+	r = of_clk_add_hw_provider(node, of_clk_hw_onecell_get, clk_data);
+	if (r)
+		goto unregister_gates;
+
+	r = devm_of_platform_populate(&pdev->dev);
+	if (r)
+		goto del_provider;
+
+	return 0;
+
+del_provider:
+	of_clk_del_provider(node);
+unregister_gates:
+	mtk_clk_unregister_gates(audio_clks, ARRAY_SIZE(audio_clks), clk_data);
+free_data:
+	mtk_free_clk_data(clk_data);
+	return r;
+}
+
 static const struct of_device_id of_match_clk_mt6739[] = {
 	{
 		.compatible = "mediatek,mt6739-apmixedsys",
@@ -637,6 +706,9 @@ static const struct of_device_id of_match_clk_mt6739[] = {
 	}, {
 		.compatible = "mediatek,mt6739-infracfg",
 		.data = clk_mt6739_infra_probe,
+	}, {
+		.compatible = "mediatek,mt6739-audiosys",
+		.data = clk_mt6739_audio_probe,
 	}, {
 		/* sentinel */
 	}
