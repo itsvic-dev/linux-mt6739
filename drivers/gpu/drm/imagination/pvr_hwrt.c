@@ -235,6 +235,7 @@ hwrt_init_common_fw_structure(struct pvr_file *pvr_file,
 	struct drm_pvr_create_hwrt_geom_data_args *geom_data_args = &args->geom_data_args;
 	struct pvr_device *pvr_dev = pvr_file->pvr_dev;
 	struct pvr_rt_mtile_info info;
+	u32 parameter_format = 0;
 	int err;
 
 	err = PVR_FEATURE_VALUE(pvr_dev, tile_size_x, &info.tile_size_x);
@@ -248,16 +249,11 @@ hwrt_init_common_fw_structure(struct pvr_file *pvr_file,
 	info.num_tiles_x = DIV_ROUND_UP(args->width, info.tile_size_x);
 	info.num_tiles_y = DIV_ROUND_UP(args->height, info.tile_size_y);
 
-	if (PVR_HAS_FEATURE(pvr_dev, simple_parameter_format_version)) {
-		u32 parameter_format;
+	if (PVR_HAS_FEATURE(pvr_dev, simple_parameter_format_version))
+		WARN_ON(PVR_FEATURE_VALUE(pvr_dev, simple_parameter_format_version,
+					  &parameter_format));
 
-		err = PVR_FEATURE_VALUE(pvr_dev, simple_parameter_format_version,
-					&parameter_format);
-		if (WARN_ON(err))
-			return err;
-
-		WARN_ON(parameter_format != 2 && !pvr_dev->device_data->ddk19);
-
+	if (parameter_format == 2) {
 		/*
 		 * Set up 16 macrotiles with a multiple of 2x2 tiles per macrotile, which is
 		 * aligned to a tile group.
@@ -270,6 +266,14 @@ hwrt_init_common_fw_structure(struct pvr_file *pvr_file,
 		info.mtile_y[2] = 0;
 		info.tile_max_x = round_up(info.num_tiles_x, 2) - 1;
 		info.tile_max_y = round_up(info.num_tiles_y, 2) - 1;
+	} else if (parameter_format == 1) {
+		/* A single macrotile covers the whole render. */
+		for (int i = 0; i < ARRAY_SIZE(info.mtile_x); i++) {
+			info.mtile_x[i] = info.num_tiles_x;
+			info.mtile_y[i] = info.num_tiles_y;
+		}
+		info.tile_max_x = info.num_tiles_x - 1;
+		info.tile_max_y = info.num_tiles_y - 1;
 	} else {
 		/* Set up 16 macrotiles with a multiple of 4x4 tiles per macrotile. */
 		info.mtile_x[0] = round_up(DIV_ROUND_UP(info.num_tiles_x, 4), 4);
