@@ -7,14 +7,17 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
+#include <linux/miscdevice.h>
 #include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/poll.h>
 #include <linux/random.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
 #include <linux/sizes.h>
+#include <linux/skbuff.h>
 #include <linux/timekeeping.h>
 #include <linux/unaligned.h>
 
@@ -49,6 +52,7 @@
 #define MD_EX_PASS		8
 
 #define RX_PKT_MAX		SZ_8K
+#define PORT_RX_MAX		64
 #define RPC_MAX_ARGS		6
 #define RPC_MAX_BUF		2048
 #define RPC_RESP_ID		0xffff0000
@@ -285,6 +289,23 @@ static const u8 ap_feature_mask[MD_FEATURE_COUNT] = {
 	[F_MULTI_MD_MPU] = FEATURE_MUST,
 	[F_CCISM_EXP_SHM] = FEATURE_MUST,
 	[F_MD_CONSYS_SHM] = FEATURE_MUST,
+};
+
+struct mt6739_ccci;
+
+struct mt6739_ccci_port {
+	const char *name;
+	u16 rx_ch;
+	u16 tx_ch;
+	u8 queue;
+	struct mt6739_ccci *md;
+	struct miscdevice misc;
+	struct sk_buff_head rx;
+	wait_queue_head_t wait;
+};
+
+static struct mt6739_ccci_port mt6739_ccci_ports[] = {
+	{ .name = "ccci_fs", .rx_ch = 14, .tx_ch = 15, .queue = 4 },
 };
 
 struct mt6739_ccci {
@@ -594,6 +615,136 @@ static void mt6739_ccci_ctrl(struct mt6739_ccci *md, const struct ccci_header *h
 	}
 }
 
+static bool mt6739_ccci_port_rx(struct mt6739_ccci *md, const u8 *pkt, u32 n)
+{
+	const struct ccci_header *hdr = (const void *)pkt;
+	struct mt6739_ccci_port *port;
+	struct sk_buff *skb;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(mt6739_ccci_ports); i++) {
+		port = &mt6739_ccci_ports[i];
+		if (port->rx_ch != hdr->channel)
+			continue;
+		if (skb_queue_len(&port->rx) >= PORT_RX_MAX) {
+			dev_warn_ratelimited(md->dev, "%s: queue full, drop\n", port->name);
+			return true;
+		}
+		skb = alloc_skb(n, GFP_KERNEL);
+		if (skb) {
+			skb_put_data(skb, pkt, n);
+			skb_queue_tail(&port->rx, skb);
+			wake_up_interruptible(&port->wait);
+		}
+		return true;
+	}
+	return false;
+}
+
+static struct mt6739_ccci_port *mt6739_ccci_file_port(struct file *file)
+{
+	return container_of(file->private_data, struct mt6739_ccci_port, misc);
+}
+
+static ssize_t mt6739_ccci_port_read(struct file *file, char __user *buf, size_t len,
+				     loff_t *ppos)
+{
+	struct mt6739_ccci_port *port = mt6739_ccci_file_port(file);
+	struct sk_buff *skb;
+	ssize_t ret;
+
+	for (;;) {
+		skb = skb_dequeue(&port->rx);
+		if (skb)
+			break;
+		if (file->f_flags & O_NONBLOCK)
+			return -EAGAIN;
+		ret = wait_event_interruptible(port->wait, !skb_queue_empty(&port->rx));
+		if (ret)
+			return ret;
+	}
+	if (len < skb->len) {
+		skb_queue_head(&port->rx, skb);
+		return -EMSGSIZE;
+	}
+	ret = copy_to_user(buf, skb->data, skb->len) ? -EFAULT : skb->len;
+	kfree_skb(skb);
+	return ret;
+}
+
+static ssize_t mt6739_ccci_port_write(struct file *file, const char __user *buf, size_t len,
+				      loff_t *ppos)
+{
+	struct mt6739_ccci_port *port = mt6739_ccci_file_port(file);
+	struct ccci_header *hdr;
+	void *pkt;
+	int ret;
+
+	if (len < sizeof(*hdr) || len > RX_PKT_MAX)
+		return -EINVAL;
+	if (!port->md->started)
+		return -ENODEV;
+	pkt = memdup_user(buf, len);
+	if (IS_ERR(pkt))
+		return PTR_ERR(pkt);
+	hdr = pkt;
+	hdr->channel = port->tx_ch;
+	hdr->data[1] = len;
+	ret = mt6739_ccci_ring_tx(port->md, port->queue, pkt, len);
+	kfree(pkt);
+	return ret ?: len;
+}
+
+static __poll_t mt6739_ccci_port_poll(struct file *file, poll_table *wait)
+{
+	struct mt6739_ccci_port *port = mt6739_ccci_file_port(file);
+
+	poll_wait(file, &port->wait, wait);
+	return (skb_queue_empty(&port->rx) ? 0 : EPOLLIN | EPOLLRDNORM) | EPOLLOUT | EPOLLWRNORM;
+}
+
+static const struct file_operations mt6739_ccci_port_fops = {
+	.owner = THIS_MODULE,
+	.read = mt6739_ccci_port_read,
+	.write = mt6739_ccci_port_write,
+	.poll = mt6739_ccci_port_poll,
+	.llseek = noop_llseek,
+};
+
+static int mt6739_ccci_ports_register(struct mt6739_ccci *md)
+{
+	struct mt6739_ccci_port *port;
+	int i, ret;
+
+	for (i = 0; i < ARRAY_SIZE(mt6739_ccci_ports); i++) {
+		port = &mt6739_ccci_ports[i];
+		port->md = md;
+		skb_queue_head_init(&port->rx);
+		init_waitqueue_head(&port->wait);
+		port->misc.minor = MISC_DYNAMIC_MINOR;
+		port->misc.name = port->name;
+		port->misc.fops = &mt6739_ccci_port_fops;
+		port->misc.mode = 0660;
+		ret = misc_register(&port->misc);
+		if (ret) {
+			while (--i >= 0)
+				misc_deregister(&mt6739_ccci_ports[i].misc);
+			return ret;
+		}
+	}
+	return 0;
+}
+
+static void mt6739_ccci_ports_unregister(void)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(mt6739_ccci_ports); i++) {
+		misc_deregister(&mt6739_ccci_ports[i].misc);
+		skb_queue_purge(&mt6739_ccci_ports[i].rx);
+	}
+}
+
 static void mt6739_ccci_ring_rx(struct mt6739_ccci *md, int q)
 {
 	struct mt6739_ccci_ring *ring = md->in_exception ? &md->exp_rings[q] : &md->rings[q];
@@ -627,6 +778,8 @@ static void mt6739_ccci_ring_rx(struct mt6739_ccci *md, int q)
 			mt6739_ccci_rpc(md, q, md->rx_pkt, pkt[1]);
 			break;
 		default:
+			if (mt6739_ccci_port_rx(md, md->rx_pkt, pkt[1]))
+				break;
 			dev_info(md->dev, "queue %d: channel %u data %#x %#x reserved %#x len %u\n",
 				 q, hdr->channel, hdr->data[0], hdr->data[1], hdr->reserved, pkt[1]);
 			print_hex_dump(KERN_INFO, "md pkt: ", DUMP_PREFIX_OFFSET, 16, 1,
@@ -1153,6 +1306,10 @@ static int mt6739_ccci_probe(struct platform_device *pdev)
 			return ret;
 	}
 
+	ret = mt6739_ccci_ports_register(md);
+	if (ret)
+		return ret;
+
 	dir = debugfs_create_dir("mt6739-ccci", NULL);
 	debugfs_create_file("start", 0200, dir, md, &mt6739_ccci_start_fops);
 	debugfs_create_file("status", 0400, dir, md, &mt6739_ccci_status_fops);
@@ -1171,6 +1328,7 @@ static int mt6739_ccci_probe(struct platform_device *pdev)
 static void mt6739_ccci_remove(struct platform_device *pdev)
 {
 	debugfs_remove_recursive(platform_get_drvdata(pdev));
+	mt6739_ccci_ports_unregister();
 }
 
 static const struct of_device_id mt6739_ccci_of_match[] = {
