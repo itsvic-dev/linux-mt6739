@@ -454,6 +454,30 @@ struct ddk19_fwif_cmd_3d {
 	u32 padding;
 };
 
+struct ddk19_fwif_cmd_transfer {
+	u64 isp_bgobjvals;
+	u64 isp_bgobjdepth;
+	u64 usc_pixel_output_ctrl;
+	u64 usc_clear_register[4];
+	u64 pds_bgnd[4];
+	u64 tpu_border_colour_table;
+	u64 tpu_yuv_csc_coefficients;
+	u64 isp_render;
+	u64 isp_mtile_size;
+	u64 isp_mtile_base;
+	u64 isp_pixel_base;
+	u64 isp_render_origin;
+	u64 isp_ctl;
+	u64 isp_rgn;
+	u64 isp_aa;
+	u64 event_pixel_pds_info;
+	u64 event_pixel_pds_code;
+	u64 event_pixel_pds_data;
+	u64 pbe_word[9];
+	u32 frame_num;
+	u32 flags;
+};
+
 struct ddk19_fwif_freelist {
 	u64 freelist_dev_addr;
 	u64 current_dev_addr;
@@ -606,6 +630,13 @@ DDK19_CHECK(struct ddk19_fwif_cmd_3d, flags, 608);
 DDK19_CHECK(struct ddk19_fwif_cmd_3d, zls_stride, 632);
 DDK19_CHECK(struct ddk19_fwif_cmd_3d, zslice_offsets, 640);
 DDK19_CHECK(struct ddk19_fwif_cmd_3d, max_deadline_ms, 656);
+static_assert(sizeof(struct ddk19_fwif_cmd_transfer) == 272);
+DDK19_CHECK(struct ddk19_fwif_cmd_transfer, pds_bgnd, 56);
+DDK19_CHECK(struct ddk19_fwif_cmd_transfer, isp_render, 104);
+DDK19_CHECK(struct ddk19_fwif_cmd_transfer, isp_pixel_base, 128);
+DDK19_CHECK(struct ddk19_fwif_cmd_transfer, event_pixel_pds_data, 184);
+DDK19_CHECK(struct ddk19_fwif_cmd_transfer, pbe_word, 192);
+DDK19_CHECK(struct ddk19_fwif_cmd_transfer, flags, 268);
 static_assert(sizeof(struct ddk19_fwif_freelist) == 64);
 DDK19_CHECK(struct ddk19_fwif_freelist, hwr_counter, 40);
 DDK19_CHECK(struct ddk19_fwif_freelist, oom_ready_limit, 56);

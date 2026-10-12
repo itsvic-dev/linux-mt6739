@@ -1104,6 +1104,8 @@ u32 pvr_ddk19_job_cmd_len(struct pvr_job *job)
 		return sizeof(struct ddk19_fwif_cmd_ta);
 	case DRM_PVR_JOB_TYPE_FRAGMENT:
 		return sizeof(struct ddk19_fwif_cmd_3d);
+	case DRM_PVR_JOB_TYPE_TRANSFER_FRAG:
+		return sizeof(struct ddk19_fwif_cmd_transfer);
 	case DRM_PVR_JOB_TYPE_COMPUTE:
 		return sizeof(struct ddk19_fwif_cmd_compute);
 	default:
@@ -1198,6 +1200,37 @@ static u32 ddk19_3d_cmd(struct pvr_job *job, struct ddk19_fwif_cmd_3d *cmd)
 	return sizeof(*cmd);
 }
 
+static u32 ddk19_transfer_cmd(struct pvr_job *job, struct ddk19_fwif_cmd_transfer *cmd)
+{
+	const struct rogue_fwif_cmd_transfer *in = job->cmd;
+	const struct rogue_fwif_transfer_regs *regs = &in->regs;
+
+	memset(cmd, 0, sizeof(*cmd));
+	cmd->isp_bgobjvals = regs->isp_bgobjvals;
+	cmd->usc_pixel_output_ctrl = regs->usc_pixel_output_ctrl;
+	cmd->usc_clear_register[0] = regs->usc_clear_register0;
+	cmd->usc_clear_register[1] = regs->usc_clear_register1;
+	cmd->usc_clear_register[2] = regs->usc_clear_register2;
+	cmd->usc_clear_register[3] = regs->usc_clear_register3;
+	cmd->pds_bgnd[0] = regs->pds_bgnd0_base;
+	cmd->pds_bgnd[1] = regs->pds_bgnd1_base;
+	cmd->pds_bgnd[3] = regs->pds_bgnd3_sizeinfo;
+	cmd->isp_render = regs->isp_render;
+	cmd->isp_mtile_size = regs->isp_mtile_size;
+	cmd->isp_mtile_base = regs->isp_mtile_base;
+	cmd->isp_pixel_base = pvr_ddk19_heaps[DRM_PVR_HEAP_TRANSFER_FRAG].base & ~(u64)(SZ_1G - 1);
+	cmd->isp_render_origin = regs->isp_render_origin;
+	cmd->isp_ctl = regs->isp_ctl;
+	cmd->isp_rgn = regs->isp_rgn;
+	cmd->isp_aa = regs->isp_aa;
+	cmd->event_pixel_pds_info = regs->event_pixel_pds_info;
+	cmd->event_pixel_pds_code = regs->event_pixel_pds_code;
+	cmd->event_pixel_pds_data = regs->event_pixel_pds_data;
+	memcpy(cmd->pbe_word, regs->pbe_wordx_mrty, sizeof(cmd->pbe_word));
+
+	return sizeof(*cmd);
+}
+
 u32 pvr_ddk19_job_cmd(struct pvr_job *job, void *out)
 {
 	switch (job->type) {
@@ -1205,6 +1238,8 @@ u32 pvr_ddk19_job_cmd(struct pvr_job *job, void *out)
 		return ddk19_ta_cmd(job, out);
 	case DRM_PVR_JOB_TYPE_FRAGMENT:
 		return ddk19_3d_cmd(job, out);
+	case DRM_PVR_JOB_TYPE_TRANSFER_FRAG:
+		return ddk19_transfer_cmd(job, out);
 	case DRM_PVR_JOB_TYPE_COMPUTE: {
 		const struct rogue_fwif_cmd_compute *in = job->cmd;
 		const struct rogue_fwif_static_computecontext_state *state =
