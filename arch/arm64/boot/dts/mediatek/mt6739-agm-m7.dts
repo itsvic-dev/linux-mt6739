@@ -50,6 +50,34 @@
 				       <3687800 10>, <3667500 5>, <3327000 0>;
 	};
 
+	speaker_amp: audio-amplifier {
+		compatible = "awinic,aw8738";
+		mode-gpios = <&pinctrl 24 GPIO_ACTIVE_HIGH>;
+		awinic,mode = <3>;
+		sound-name-prefix = "Speaker Amp";
+	};
+
+	sound: sound {
+		compatible = "mediatek,mt6739-mt6357-sound";
+		model = "AGM M7";
+		pinctrl-names = "default";
+		pinctrl-0 = <&aud_pins>;
+		mediatek,platform = <&afe>;
+		aux-devs = <&speaker_amp>;
+		audio-routing = "Speaker Amp IN", "Line out",
+				"Speaker", "Speaker Amp OUT",
+				"Earpiece", "Hansdet",
+				"AIN0", "Main Mic";
+
+		adda-dai-link {
+			link-name = "ADDA_BE";
+
+			codec {
+				sound-dai = <&mt6357_codec>;
+			};
+		};
+	};
+
 	reserved-memory {
 		#address-cells = <2>;
 		#size-cells = <2>;
@@ -279,6 +307,19 @@
 };
 
 &pinctrl {
+	aud_pins: aud-pins {
+		pins {
+			pinmux = <PINMUX_GPIO62__FUNC_AUD_SYNC_MOSI>,
+				 <PINMUX_GPIO63__FUNC_AUD_DAT_MOSI0>,
+				 <PINMUX_GPIO64__FUNC_AUD_DAT_MOSI1>,
+				 <PINMUX_GPIO65__FUNC_AUD_CLK_MOSI>,
+				 <PINMUX_GPIO66__FUNC_AUD_SYNC_MISO>,
+				 <PINMUX_GPIO67__FUNC_AUD_DAT_MISO0>,
+				 <PINMUX_GPIO68__FUNC_AUD_DAT_MISO1>,
+				 <PINMUX_GPIO69__FUNC_AUD_CLK_MISO>;
+		};
+	};
+
 	disp_pwm_pins: disp-pwm-pins {
 		pins {
 			pinmux = <PINMUX_GPIO85__FUNC_DISP_PWM>;
@@ -313,6 +354,10 @@
 			drive-strength = <4>;
 		};
 	};
+};
+
+&afe {
+	status = "okay";
 };
 
 &ap_i2c0 {
@@ -385,6 +430,12 @@
 		power-off-time-sec = <0>;
 
 		/delete-node/ key-home;
+	};
+
+	mt6357_codec: audio-codec {
+		compatible = "mediatek,mt6357-sound";
+		vaud28-supply = <&mt6357_vaud28_reg>;
+		#sound-dai-cells = <0>;
 	};
 
 	power-controller {
