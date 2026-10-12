@@ -395,6 +395,11 @@
 	status = "okay";
 };
 
+&modem {
+	vmodem-supply = <&mt6357_vmodem_reg>;
+	status = "okay";
+};
+
 &connsys_wifi {
 	status = "okay";
 };
