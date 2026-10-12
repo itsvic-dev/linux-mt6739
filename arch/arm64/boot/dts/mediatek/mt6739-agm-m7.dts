@@ -209,6 +209,26 @@
 	status = "okay";
 };
 
+&cpu0 {
+	proc-supply = <&mt6357_vproc_reg>;
+	sram-supply = <&mt6357_vsram_proc_reg>;
+};
+
+&cpu1 {
+	proc-supply = <&mt6357_vproc_reg>;
+	sram-supply = <&mt6357_vsram_proc_reg>;
+};
+
+&cpu2 {
+	proc-supply = <&mt6357_vproc_reg>;
+	sram-supply = <&mt6357_vsram_proc_reg>;
+};
+
+&cpu3 {
+	proc-supply = <&mt6357_vproc_reg>;
+	sram-supply = <&mt6357_vsram_proc_reg>;
+};
+
 &display {
 	backlight = <&backlight>;
 	width-mm = <37>;
@@ -336,6 +356,17 @@
 
 &gpu {
 	status = "okay";
+};
+
+/* The vendor CPU DVFS limits. */
+&mt6357_vproc_reg {
+	regulator-min-microvolt = <950000>;
+	regulator-max-microvolt = <1306250>;
+};
+
+&mt6357_vsram_proc_reg {
+	regulator-min-microvolt = <1150000>;
+	regulator-max-microvolt = <1312500>;
 };
 
 &mt6357_rtc {
