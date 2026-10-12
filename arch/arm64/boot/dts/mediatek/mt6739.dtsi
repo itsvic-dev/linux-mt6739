@@ -413,9 +413,10 @@
 			status = "disabled";
 		};
 
-		modem: modem@10209000 {
+		modem: modem@10014000 {
 			compatible = "mediatek,mt6739-ccci";
-			reg = <0 0x10209000 0 0x1000>,
+			reg = <0 0x10014000 0 0x1000>,
+			      <0 0x10209000 0 0x1000>,
 			      <0 0x1020a000 0 0x1000>,
 			      <0 0x1020e300 0 0x8>,
 			      <0 0x20000000 0 0x1000>,
@@ -425,7 +426,7 @@
 			      <0 0x10000000 0 0x4>,
 			      <0 0x1000c000 0 0x4>,
 			      <0 0x10012000 0 0x100>;
-			reg-names = "ap-ccif", "md-ccif", "boot-stats", "md-cfg", "md-rgu",
+			reg-names = "cldma-ao", "ap-ccif", "md-ccif", "boot-stats", "md-cfg", "md-rgu",
 				    "md-pll", "md-clksw", "topckgen", "apmixed", "dvfsrc";
 			interrupts = <GIC_SPI 148 IRQ_TYPE_LEVEL_LOW>,
 				     <GIC_SPI 149 IRQ_TYPE_LEVEL_LOW>;
