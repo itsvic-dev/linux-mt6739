@@ -90,6 +90,7 @@ enum {
 	F_EXCEPTION_SHM = 1,
 	F_CCIF_SHM = 2,
 	F_HIF_DMA_REMAP = 5,
+	F_RTC_32K_LESS = 6,
 	F_RANDOM_SEED = 7,
 	F_GPS_COCLOCK = 8,
 	F_SBP_ID = 9,
@@ -275,6 +276,8 @@ static const u8 ap_feature_mask[MD_FEATURE_COUNT] = {
 	[F_EXCEPTION_SHM] = FEATURE_MUST,
 	[F_CCIF_SHM] = FEATURE_MUST,
 	[F_HIF_DMA_REMAP] = FEATURE_MUST,
+	/* The board has no 32 kHz crystal (MT6357 RTC spare 0x5b8 bit 6 is 0). */
+	[F_RTC_32K_LESS] = FEATURE_MUST,
 	[F_RANDOM_SEED] = FEATURE_MUST,
 	[F_GPS_COCLOCK] = FEATURE_MUST,
 	[F_SBP_ID] = FEATURE_MUST,
