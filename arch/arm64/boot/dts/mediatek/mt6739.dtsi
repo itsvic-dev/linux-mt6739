@@ -416,6 +416,7 @@
 		modem: modem@10014000 {
 			compatible = "mediatek,mt6739-ccci";
 			reg = <0 0x10014000 0 0x1000>,
+			      <0 0x1021b000 0 0x1000>,
 			      <0 0x10209000 0 0x1000>,
 			      <0 0x1020a000 0 0x1000>,
 			      <0 0x1020e300 0 0x8>,
@@ -426,11 +427,13 @@
 			      <0 0x10000000 0 0x4>,
 			      <0 0x1000c000 0 0x4>,
 			      <0 0x10012000 0 0x100>;
-			reg-names = "cldma-ao", "ap-ccif", "md-ccif", "boot-stats", "md-cfg", "md-rgu",
-				    "md-pll", "md-clksw", "topckgen", "apmixed", "dvfsrc";
+			reg-names = "cldma-ao", "cldma-pdn", "ap-ccif", "md-ccif", "boot-stats",
+				    "md-cfg", "md-rgu", "md-pll", "md-clksw", "topckgen", "apmixed",
+				    "dvfsrc";
 			interrupts = <GIC_SPI 148 IRQ_TYPE_LEVEL_LOW>,
-				     <GIC_SPI 149 IRQ_TYPE_LEVEL_LOW>;
-			interrupt-names = "ccif0", "ccif1";
+				     <GIC_SPI 149 IRQ_TYPE_LEVEL_LOW>,
+				     <GIC_SPI 165 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "ccif0", "ccif1", "cldma";
 			clocks = <&infracfg_ao CLK_INFRA_CLDMA_BCLK>,
 				 <&infracfg_ao CLK_INFRA_CCIF_AP>,
 				 <&infracfg_ao CLK_INFRA_CCIF_MD>,
