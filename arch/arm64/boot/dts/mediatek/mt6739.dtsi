@@ -23,6 +23,9 @@
 			compatible = "arm,cortex-a53";
 			reg = <0x0>;
 			enable-method = "psci";
+			clocks = <&topckgen_ao CLK_TOP_AO_MCU_SEL>, <&clk26m>;
+			clock-names = "cpu", "intermediate";
+			operating-points-v2 = <&cluster0_opp>;
 			cpu-idle-states = <&cpu_off &cluster_off>;
 		};
 
@@ -31,6 +34,9 @@
 			compatible = "arm,cortex-a53";
 			reg = <0x1>;
 			enable-method = "psci";
+			clocks = <&topckgen_ao CLK_TOP_AO_MCU_SEL>, <&clk26m>;
+			clock-names = "cpu", "intermediate";
+			operating-points-v2 = <&cluster0_opp>;
 			cpu-idle-states = <&cpu_off &cluster_off>;
 		};
 
@@ -39,6 +45,9 @@
 			compatible = "arm,cortex-a53";
 			reg = <0x2>;
 			enable-method = "psci";
+			clocks = <&topckgen_ao CLK_TOP_AO_MCU_SEL>, <&clk26m>;
+			clock-names = "cpu", "intermediate";
+			operating-points-v2 = <&cluster0_opp>;
 			cpu-idle-states = <&cpu_off &cluster_off>;
 		};
 
@@ -47,6 +56,9 @@
 			compatible = "arm,cortex-a53";
 			reg = <0x3>;
 			enable-method = "psci";
+			clocks = <&topckgen_ao CLK_TOP_AO_MCU_SEL>, <&clk26m>;
+			clock-names = "cpu", "intermediate";
+			operating-points-v2 = <&cluster0_opp>;
 			cpu-idle-states = <&cpu_off &cluster_off>;
 		};
 
@@ -90,6 +102,92 @@
 					cpu = <&cpu3>;
 				};
 			};
+		};
+	};
+
+	/* The vendor "FY" table, for efuse segment 0xad. */
+	cluster0_opp: opp-table-cluster0 {
+		compatible = "operating-points-v2";
+		opp-shared;
+
+		opp-299000000 {
+			opp-hz = /bits/ 64 <299000000>;
+			opp-microvolt = <950000>;
+		};
+
+		opp-338000000 {
+			opp-hz = /bits/ 64 <338000000>;
+			opp-microvolt = <975000>;
+		};
+
+		opp-416000000 {
+			opp-hz = /bits/ 64 <416000000>;
+			opp-microvolt = <1000000>;
+		};
+
+		opp-546000000 {
+			opp-hz = /bits/ 64 <546000000>;
+			opp-microvolt = <1025000>;
+		};
+
+		opp-624000000 {
+			opp-hz = /bits/ 64 <624000000>;
+			opp-microvolt = <1050000>;
+		};
+
+		opp-702000000 {
+			opp-hz = /bits/ 64 <702000000>;
+			opp-microvolt = <1075000>;
+		};
+
+		opp-845000000 {
+			opp-hz = /bits/ 64 <845000000>;
+			opp-microvolt = <1118750>;
+		};
+
+		opp-910000000 {
+			opp-hz = /bits/ 64 <910000000>;
+			opp-microvolt = <1137500>;
+		};
+
+		opp-962000000 {
+			opp-hz = /bits/ 64 <962000000>;
+			opp-microvolt = <1156250>;
+		};
+
+		opp-1001000000 {
+			opp-hz = /bits/ 64 <1001000000>;
+			opp-microvolt = <1175000>;
+		};
+
+		opp-1053000000 {
+			opp-hz = /bits/ 64 <1053000000>;
+			opp-microvolt = <1200000>;
+		};
+
+		opp-1105000000 {
+			opp-hz = /bits/ 64 <1105000000>;
+			opp-microvolt = <1225000>;
+		};
+
+		opp-1170000000 {
+			opp-hz = /bits/ 64 <1170000000>;
+			opp-microvolt = <1250000>;
+		};
+
+		opp-1196000000 {
+			opp-hz = /bits/ 64 <1196000000>;
+			opp-microvolt = <1268750>;
+		};
+
+		opp-1235000000 {
+			opp-hz = /bits/ 64 <1235000000>;
+			opp-microvolt = <1287500>;
+		};
+
+		opp-1274000000 {
+			opp-hz = /bits/ 64 <1274000000>;
+			opp-microvolt = <1306250>;
 		};
 	};
 
@@ -156,6 +254,12 @@
 		topckgen: syscon@10000000 {
 			compatible = "mediatek,mt6739-topckgen";
 			reg = <0 0x10000000 0 0x1000>;
+			#clock-cells = <1>;
+		};
+
+		topckgen_ao: clock-controller@1001b000 {
+			compatible = "mediatek,mt6739-topckgen-ao";
+			reg = <0 0x1001b000 0 0x1000>;
 			#clock-cells = <1>;
 		};
 
