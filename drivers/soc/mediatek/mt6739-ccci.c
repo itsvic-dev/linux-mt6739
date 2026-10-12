@@ -1671,11 +1671,33 @@ err_clk:
 	return ret;
 }
 
-static ssize_t mt6739_ccci_start_write(struct file *file, const char __user *buf,
-				       size_t len, loff_t *ppos)
+static ssize_t power_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct mt6739_ccci *md = file->private_data;
-	int ret = 0;
+	struct mt6739_ccci *md = dev_get_drvdata(dev);
+	const char *state = "off";
+
+	if (md->in_exception)
+		state = "exception";
+	else if (md->ready)
+		state = "ready";
+	else if (md->started)
+		state = "booting";
+	return sysfs_emit(buf, "%s\n", state);
+}
+
+static ssize_t power_store(struct device *dev, struct device_attribute *attr, const char *buf,
+			   size_t len)
+{
+	struct mt6739_ccci *md = dev_get_drvdata(dev);
+	bool on;
+	int ret;
+
+	ret = kstrtobool(buf, &on);
+	if (ret)
+		return ret;
+	/* The modem cannot be turned off yet. */
+	if (!on)
+		return -EOPNOTSUPP;
 
 	mutex_lock(&md->lock);
 	if (!md->started) {
@@ -1685,11 +1707,13 @@ static ssize_t mt6739_ccci_start_write(struct file *file, const char __user *buf
 	mutex_unlock(&md->lock);
 	return ret ?: len;
 }
+static DEVICE_ATTR_RW(power);
 
-static const struct file_operations mt6739_ccci_start_fops = {
-	.open = simple_open,
-	.write = mt6739_ccci_start_write,
+static struct attribute *mt6739_ccci_attrs[] = {
+	&dev_attr_power.attr,
+	NULL
 };
+ATTRIBUTE_GROUPS(mt6739_ccci);
 
 static int mt6739_ccci_status_show(struct seq_file *s, void *unused)
 {
@@ -1825,7 +1849,6 @@ static int mt6739_ccci_probe(struct platform_device *pdev)
 	}
 
 	dir = debugfs_create_dir("mt6739-ccci", NULL);
-	debugfs_create_file("start", 0200, dir, md, &mt6739_ccci_start_fops);
 	debugfs_create_file("status", 0400, dir, md, &mt6739_ccci_status_fops);
 	md->smem_blob.data = md->smem;
 	md->smem_blob.size = md->smem_layout.ap_md1_size;
@@ -1863,6 +1886,7 @@ static struct platform_driver mt6739_ccci_driver = {
 	.driver = {
 		.name = "mt6739-ccci",
 		.of_match_table = mt6739_ccci_of_match,
+		.dev_groups = mt6739_ccci_groups,
 	},
 };
 module_platform_driver(mt6739_ccci_driver);
