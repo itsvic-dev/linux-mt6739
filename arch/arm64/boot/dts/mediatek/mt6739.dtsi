@@ -495,6 +495,38 @@
 			status = "disabled";
 		};
 
+		audiosys: clock-controller@11220000 {
+			compatible = "mediatek,mt6739-audiosys", "syscon";
+			reg = <0 0x11220000 0 0x1000>;
+			#clock-cells = <1>;
+
+			afe: audio-controller {
+				compatible = "mediatek,mt6739-audio";
+				interrupts = <GIC_SPI 153 IRQ_TYPE_LEVEL_LOW>;
+				clocks = <&infracfg_ao CLK_INFRA_AUDIO>,
+					 <&topckgen CLK_TOP_AUDIO_SEL>,
+					 <&topckgen CLK_TOP_AUD_INTBUS_SEL>,
+					 <&audiosys CLK_AUDIO_AFE>,
+					 <&audiosys CLK_AUDIO_DAC>,
+					 <&audiosys CLK_AUDIO_DAC_PREDIS>,
+					 <&audiosys CLK_AUDIO_ADC>,
+					 <&infracfg_ao CLK_INFRA_AUDIO_26M_BCLK>;
+				clock-names = "aud_infra_clk",
+					      "top_mux_audio",
+					      "top_mux_aud_intbus",
+					      "aud_afe_clk",
+					      "aud_dac_clk",
+					      "aud_dac_predis_clk",
+					      "aud_adc_clk",
+					      "mtkaif_26m_clk";
+				assigned-clocks = <&topckgen CLK_TOP_AUDIO_SEL>,
+						  <&topckgen CLK_TOP_AUD_INTBUS_SEL>;
+				assigned-clock-parents = <&clk26m>,
+							 <&topckgen CLK_TOP_SYSPLL1_D4>;
+				status = "disabled";
+			};
+		};
+
 		mmc0: mmc@11230000 {
 			compatible = "mediatek,mt6739-mmc", "mediatek,mt6779-mmc";
 			reg = <0 0x11230000 0 0x1000>;
