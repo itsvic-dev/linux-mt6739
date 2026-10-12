@@ -437,6 +437,7 @@ struct mt6739_ccci {
 	bool tx_started;
 	struct net_device *netdev[CCMNI_LINKS];
 	u8 link_txq[CCMNI_LINKS];
+	u8 link_netif[CCMNI_LINKS];
 	struct dentry *debugfs;
 };
 
@@ -602,6 +603,18 @@ static void mt6739_ccci_rpc_put(u8 **p, u32 *argc, const void *data, u32 n)
 	(*argc)++;
 }
 
+/* The modem picks the ccmni index of each PDN; link 0 takes it if no link has that index. */
+static void mt6739_ccci_map_netif(struct mt6739_ccci *md, u32 netif, u8 txq)
+{
+	u32 link = netif < CCMNI_LINKS && md->netdev[netif] ? netif : 0;
+
+	if (netif > FIELD_MAX(LHIF_NETIF))
+		return;
+	WRITE_ONCE(md->link_netif[link], netif);
+	WRITE_ONCE(md->link_txq[link], txq);
+	dev_info(md->dev, "ccmni%u uses link %u, TX queue %u\n", netif, link, txq);
+}
+
 static void mt6739_ccci_rpc(struct mt6739_ccci *md, int q, u8 *pkt, u32 n)
 {
 	struct ccci_header *hdr = (void *)pkt;
@@ -658,9 +671,9 @@ static void mt6739_ccci_rpc(struct mt6739_ccci *md, int q, u8 *pkt, u32 n)
 		dev_info(md->dev, "RPC GPIO/ADC (input %u bytes): not available\n", arg_len[0]);
 		break;
 	case RPC_LHIF_MAPPING:
-		if (arg_len[0] >= 8 && get_unaligned_le32(arg[0]) < CCMNI_LINKS)
-			md->link_txq[get_unaligned_le32(arg[0])] =
-				get_unaligned_le32(arg[0] + 4) == LHIF_HWQ_AP_UL_Q1 ? 3 : 0;
+		if (arg_len[0] >= 8)
+			mt6739_ccci_map_netif(md, get_unaligned_le32(arg[0]),
+					      get_unaligned_le32(arg[0] + 4) == LHIF_HWQ_AP_UL_Q1 ? 3 : 0);
 		fallthrough;
 	case RPC_USIM2NFC:
 		err[0] = 0;
@@ -837,14 +850,20 @@ static void mt6739_ccci_cldma_start(struct mt6739_ccci *md)
 static void mt6739_ccci_net_rx(struct mt6739_ccci *md, struct sk_buff *skb)
 {
 	struct net_device *ndev;
-	u8 netif;
+	u8 netif, link;
 
 	if (skb->len <= LHIF_HDR) {
 		dev_kfree_skb(skb);
 		return;
 	}
 	netif = FIELD_GET(LHIF_NETIF, skb->data[3]);
-	ndev = netif < CCMNI_LINKS ? md->netdev[netif] : NULL;
+	ndev = NULL;
+	for (link = 0; link < CCMNI_LINKS; link++) {
+		if (md->netdev[link] && READ_ONCE(md->link_netif[link]) == netif) {
+			ndev = md->netdev[link];
+			break;
+		}
+	}
 	skb_pull(skb, LHIF_HDR);
 	if (!ndev || !netif_running(ndev)) {
 		dev_dbg_ratelimited(md->dev, "RX for ccmni%u dropped (%u bytes)\n", netif, skb->len);
@@ -975,7 +994,7 @@ static netdev_tx_t mt6739_ccci_xmit(struct sk_buff *skb, struct net_device *ndev
 		goto drop;
 	}
 	g = &md->tgpd[q][i];
-	g->netif = link->id;
+	g->netif = READ_ONCE(md->link_netif[link->id]);
 	g->msb = 0;
 	g->debug = 1;
 	g->buf = cpu_to_le32(addr);
@@ -1817,6 +1836,8 @@ static int mt6739_ccci_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 	spin_lock_init(&md->cldma_lock);
+	for (i = 0; i < CCMNI_LINKS; i++)
+		md->link_netif[i] = i;
 	md->gpd_mem = dmam_alloc_coherent(dev, (CLDMA_RX_LEN + CLDMA_TXQ * CLDMA_TX_LEN) *
 					  sizeof(struct cldma_tgpd), &md->gpd_dma, GFP_KERNEL);
 	if (!md->gpd_mem)
