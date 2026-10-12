@@ -2,6 +2,7 @@
 /* Copyright (c) 2023 Imagination Technologies Ltd. */
 
 #include "pvr_ccb.h"
+#include "pvr_ddk19.h"
 #include "pvr_device.h"
 #include "pvr_drv.h"
 #include "pvr_dump.h"
@@ -187,6 +188,11 @@ void pvr_fwccb_process(struct pvr_device *pvr_dev)
 	struct rogue_fwif_fwccb_cmd *fwccb = pvr_dev->fwccb.ccb;
 	struct rogue_fwif_ccb_ctl *ctrl = pvr_dev->fwccb.ctrl;
 	u32 read_offset;
+
+	if (pvr_dev->device_data->ddk19) {
+		pvr_ddk19_process_irq(pvr_dev);
+		return;
+	}
 
 	mutex_lock(&pvr_dev->fwccb.lock);
 

@@ -1219,8 +1219,8 @@ void pvr_ddk19_process_irq(struct pvr_device *pvr_dev)
 		struct ddk19_fwif_fwccb_cmd *cmd =
 			(void *)ddk19->fwccb + read_offset * DDK19_FWCCB_CMD_SIZE;
 
-		dev_info_ratelimited(from_pvr_device(pvr_dev)->dev, "ddk19: FWCCB command %u\n",
-				     READ_ONCE(cmd->cmd_type));
+		dev_info_ratelimited(from_pvr_device(pvr_dev)->dev, "ddk19: FWCCB command %u %*ph\n",
+				     READ_ONCE(cmd->cmd_type), (int)sizeof(cmd->data), cmd->data);
 		read_offset = (read_offset + 1) & ctl->wrap_mask;
 		WRITE_ONCE(ctl->read_offset, read_offset);
 	}
