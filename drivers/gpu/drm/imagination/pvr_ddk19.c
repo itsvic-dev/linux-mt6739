@@ -1141,7 +1141,7 @@ static u32 ddk19_ta_cmd(struct pvr_job *job, struct ddk19_fwif_cmd_ta *cmd)
 	}
 	cmd->flags = in->flags & ROGUE_GEOM_FLAGS_LASTKICK;
 	cmd->hwrt_data_fw_addr = in->cmd_shared.hwrt_data_fw_addr;
-	cmd->dummy_rgnhdr_te_psgregion_addr = data->rgn_header_dev_addr;
+	cmd->dummy_rgnhdr_te_psgregion_addr = DDK19_MMU_INIA_BRN_65273_BASE;
 
 	return sizeof(*cmd);
 }
