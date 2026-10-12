@@ -471,8 +471,9 @@ static const struct mtk_gate infra_clks[] = {
 		.pcw_chg_reg = _pcw_chg_reg,				\
 	}
 
-/* No armpll_ll: the CPU PLL is owned by the vendor cpufreq code. */
 static const struct mtk_pll_data plls[] = {
+	PLL(CLK_APMIXED_ARMPLL_LL, "armpll_ll", 0x0200, 0x020c, 0x00000001,
+	    PLL_AO, 22, 8, 0x0204, 24, 0x0204, 0, 0),
 	PLL(CLK_APMIXED_MAINPLL, "mainpll", 0x0220, 0x022c, 0x80000111,
 	    HAVE_RST_BAR | PLL_AO, 21, 7, 0x0224, 24, 0x0224, 0, 0),
 	PLL(CLK_APMIXED_MFGPLL, "mfgpll", 0x0240, 0x024c, 0x40000111,
