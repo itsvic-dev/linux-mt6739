@@ -40,6 +40,36 @@
 #define MD_INIT_CHK_ID		0x5555ffff
 #define CCCI_CONTROL_RX		0
 #define CCCI_CONTROL_TX		1
+#define CCCI_RPC_RX		32
+#define CCCI_RPC_TX		33
+
+#define MD_INIT_START_BOOT	0
+#define MD_EX			4
+#define MD_EX_REC_OK		6
+#define MD_EX_PASS		8
+
+#define RX_PKT_MAX		SZ_8K
+#define RPC_MAX_ARGS		6
+#define RPC_MAX_BUF		2048
+#define RPC_RESP_ID		0xffff0000
+#define RPC_GET_TDD_EINT_NUM	0x4001
+#define RPC_GET_GPIO_NUM	0x4002
+#define RPC_GET_ADC_NUM		0x4003
+#define RPC_GET_EMI_CLK_TYPE	0x4004
+#define RPC_GET_EINT_ATTR	0x4005
+#define RPC_GET_GPIO_VAL	0x4006
+#define RPC_GET_ADC_VAL		0x4007
+#define RPC_GET_GPIO_ADC	0x4009
+#define RPC_USIM2NFC		0x400a
+#define RPC_LHIF_MAPPING	0x400d
+#define RPC_DTSI_QUERY		0x400e
+#define RPC_GPIO_ADC_IN_V2	425
+#define RPC_GPIO_ADC_OUT	32
+#define RPC_GPIO_ADC_OUT_V2	88
+#define RPC_DTSI_OUT		68
+#define FS_NO_OP		(-1)
+#define FS_FUNC_FAIL		(-5)
+#define ERR_SIM_HOT_PLUG_QUERY_STRING	(-11)
 
 #define FEATURE_NOT_EXIST	0
 #define FEATURE_NOT_SUPPORT	1
@@ -287,8 +317,12 @@ struct mt6739_ccci {
 	struct debugfs_blob_wrapper smem_blob;
 	struct debugfs_blob_wrapper ccb_blob;
 	u32 ccism_size;
+	spinlock_t tx_lock;
+	u8 *rx_pkt;
+	u8 *tx_pkt;
 	struct mutex lock;
 	bool started;
+	bool ready;
 };
 
 static int mt6739_ccci_parse_lk_info(struct mt6739_ccci *md)
@@ -409,38 +443,198 @@ static void mt6739_ccci_ring_copy(void *dst, const u8 *buf, u32 pos, u32 n, u32 
 	memcpy(dst + first, buf, n - first);
 }
 
+static void mt6739_ccci_ring_put(u8 *buf, u32 pos, const void *src, u32 n, u32 len)
+{
+	u32 first = min(n, len - pos);
+
+	memcpy(buf + pos, src, first);
+	memcpy(buf, src + first, n - first);
+}
+
+static int mt6739_ccci_ring_tx(struct mt6739_ccci *md, int q, const void *data, u32 n)
+{
+	struct mt6739_ccci_ring *ring = md->in_exception ? &md->exp_rings[q] : &md->rings[q];
+	u32 len = ring->tx->length, read, write, space, total = ALIGN(16 + n, 8);
+	u32 head[2] = { PKT_HEADER, n }, foot[2] = { PKT_FOOTER, PKT_FOOTER };
+	unsigned long flags;
+
+	spin_lock_irqsave(&md->tx_lock, flags);
+	read = READ_ONCE(ring->tx->read);
+	write = READ_ONCE(ring->tx->write);
+	space = (read + len - write - 1) % len;
+	if (!len || total > space) {
+		spin_unlock_irqrestore(&md->tx_lock, flags);
+		return -EBUSY;
+	}
+	mt6739_ccci_ring_put(ring->tx_buf, write, head, sizeof(head), len);
+	mt6739_ccci_ring_put(ring->tx_buf, (write + 8) % len, data, n, len);
+	mt6739_ccci_ring_put(ring->tx_buf, (write + total - 8) % len, foot, sizeof(foot), len);
+	dma_wmb();
+	WRITE_ONCE(ring->tx->write, (write + total) % len);
+	wmb();
+	writel(BIT(q), md->ap_ccif + CCIF_BUSY);
+	writel(q, md->ap_ccif + CCIF_TCHNUM);
+	spin_unlock_irqrestore(&md->tx_lock, flags);
+	return 0;
+}
+
+static void mt6739_ccci_rpc_put(u8 **p, u32 *argc, const void *data, u32 n)
+{
+	put_unaligned_le32(n, *p);
+	memcpy(*p + 4, data, n);
+	memset(*p + 4 + n, 0, ALIGN(n, 4) - n);
+	*p += 4 + ALIGN(n, 4);
+	(*argc)++;
+}
+
+static void mt6739_ccci_rpc(struct mt6739_ccci *md, int q, u8 *pkt, u32 n)
+{
+	struct ccci_header *hdr = (void *)pkt;
+	u32 op = get_unaligned_le32(pkt + 16), argc = get_unaligned_le32(pkt + 20);
+	const u8 *arg[RPC_MAX_ARGS] = {};
+	u32 arg_len[RPC_MAX_ARGS] = {};
+	u8 *reply = md->tx_pkt, *p = reply + 24;
+	u32 off = 24, nout = 0, i;
+	s32 err[3];
+	u8 out[96];
+
+	for (i = 0; i < argc && i < RPC_MAX_ARGS && off + 4 <= n; i++) {
+		arg_len[i] = get_unaligned_le32(pkt + off);
+		arg[i] = pkt + off + 4;
+		off += 4 + ALIGN(arg_len[i], 4);
+	}
+	if (argc > RPC_MAX_ARGS || off > n) {
+		dev_err(md->dev, "RPC %#x: bad arguments\n", op);
+		return;
+	}
+
+	switch (op) {
+	case RPC_GET_TDD_EINT_NUM:
+	case RPC_GET_GPIO_NUM:
+	case RPC_GET_ADC_NUM:
+	case RPC_GET_GPIO_VAL:
+	case RPC_GET_ADC_VAL:
+		err[0] = FS_FUNC_FAIL;
+		mt6739_ccci_rpc_put(&p, &nout, err, 4);
+		mt6739_ccci_rpc_put(&p, &nout, err, 4);
+		dev_info(md->dev, "RPC %#x %.*s: not available\n", op,
+			 arg_len[0] ? (int)arg_len[0] : 0, arg[0] ? (const char *)arg[0] : "");
+		break;
+	case RPC_GET_EMI_CLK_TYPE:
+		err[0] = err[1] = err[2] = FS_FUNC_FAIL;
+		for (i = 0; i < 3; i++)
+			mt6739_ccci_rpc_put(&p, &nout, &err[i], 4);
+		break;
+	case RPC_GET_EINT_ATTR:
+		/* No SIM hot-plug EINT nodes, as in the stock DT. */
+		err[0] = ERR_SIM_HOT_PLUG_QUERY_STRING;
+		mt6739_ccci_rpc_put(&p, &nout, err, 4);
+		mt6739_ccci_rpc_put(&p, &nout, err, 4);
+		dev_info(md->dev, "RPC EINT attr %.*s type %u: none\n",
+			 arg_len[0] ? (int)arg_len[0] : 0, arg[0] ? (const char *)arg[0] : "",
+			 arg[2] && arg_len[2] >= 4 ? get_unaligned_le32(arg[2]) : 0);
+		break;
+	case RPC_GET_GPIO_ADC:
+		err[0] = 0;
+		i = arg_len[0] == RPC_GPIO_ADC_IN_V2 ? RPC_GPIO_ADC_OUT_V2 : RPC_GPIO_ADC_OUT;
+		memset(out, 0xf, i);
+		mt6739_ccci_rpc_put(&p, &nout, err, 4);
+		mt6739_ccci_rpc_put(&p, &nout, out, i);
+		dev_info(md->dev, "RPC GPIO/ADC (input %u bytes): not available\n", arg_len[0]);
+		break;
+	case RPC_LHIF_MAPPING:
+	case RPC_USIM2NFC:
+		err[0] = 0;
+		mt6739_ccci_rpc_put(&p, &nout, err, 4);
+		mt6739_ccci_rpc_put(&p, &nout, err, 4);
+		dev_info(md->dev, "RPC %#x: %*ph\n", op, min_t(u32, arg_len[0], 16), arg[0]);
+		break;
+	case RPC_DTSI_QUERY:
+		err[0] = 0;
+		memset(out, 0xf, RPC_DTSI_OUT);
+		mt6739_ccci_rpc_put(&p, &nout, err, 4);
+		mt6739_ccci_rpc_put(&p, &nout, out, RPC_DTSI_OUT);
+		dev_info(md->dev, "RPC DT query %.64s: none\n",
+			 arg_len[0] >= 66 ? (const char *)arg[0] + 2 : "");
+		break;
+	default:
+		err[0] = FS_NO_OP;
+		mt6739_ccci_rpc_put(&p, &nout, err, 4);
+		dev_warn(md->dev, "RPC %#x with %u arguments: not handled\n", op, argc);
+		break;
+	}
+
+	memcpy(reply, hdr, sizeof(*hdr));
+	hdr = (void *)reply;
+	hdr->channel = CCCI_RPC_TX;
+	hdr->data[1] = p - reply;
+	put_unaligned_le32(op | RPC_RESP_ID, reply + 16);
+	put_unaligned_le32(nout, reply + 20);
+	if (mt6739_ccci_ring_tx(md, q, reply, p - reply))
+		dev_err(md->dev, "RPC %#x: no room for the reply\n", op);
+}
+
+static void mt6739_ccci_ctrl(struct mt6739_ccci *md, const struct ccci_header *hdr)
+{
+	switch (hdr->data[1]) {
+	case MD_INIT_START_BOOT:
+		if (hdr->reserved == MD_INIT_CHK_ID)
+			break;
+		dev_info(md->dev, "HS2: MD is ready\n");
+		md->ready = true;
+		break;
+	case MD_EX:
+	case MD_EX_REC_OK:
+	case MD_EX_PASS:
+		dev_err(md->dev, "MD exception message %u\n", hdr->data[1]);
+		break;
+	default:
+		dev_info(md->dev, "control message %#x %#x\n", hdr->data[0], hdr->data[1]);
+		break;
+	}
+}
+
 static void mt6739_ccci_ring_rx(struct mt6739_ccci *md, int q)
 {
 	struct mt6739_ccci_ring *ring = md->in_exception ? &md->exp_rings[q] : &md->rings[q];
-	u8 payload[512];
 	u32 len = ring->rx->length;
-	struct ccci_header hdr;
+	struct ccci_header *hdr = (void *)md->rx_pkt;
 	u32 read, write, size, pkt[2], total;
 
 	while (len) {
 		read = READ_ONCE(ring->rx->read);
 		write = READ_ONCE(ring->rx->write);
 		size = (write + len - read) % len;
-		if (size < 16 + sizeof(hdr))
+		if (size < 16 + sizeof(*hdr))
 			break;
 		dma_rmb();
 		mt6739_ccci_ring_copy(pkt, ring->rx_buf, read, sizeof(pkt), len);
 		total = ALIGN(16 + pkt[1], 8);
-		if (pkt[0] != PKT_HEADER || pkt[1] < sizeof(hdr) || total > size) {
+		if (pkt[0] != PKT_HEADER || pkt[1] < sizeof(*hdr) || pkt[1] > RX_PKT_MAX ||
+		    total > size) {
 			dev_err(md->dev, "queue %d: bad packet %#x len %u (read %u write %u)\n",
 				q, pkt[0], pkt[1], read, write);
 			break;
 		}
-		mt6739_ccci_ring_copy(&hdr, ring->rx_buf, (read + 8) % len, sizeof(hdr), len);
-		dev_info(md->dev, "queue %d: channel %u data %#x %#x reserved %#x len %u\n",
-			 q, hdr.channel, hdr.data[0], hdr.data[1], hdr.reserved, pkt[1]);
-		if (md->in_exception && pkt[1] > sizeof(hdr)) {
-			u32 n = min_t(u32, pkt[1] - sizeof(hdr), sizeof(payload));
-
-			mt6739_ccci_ring_copy(payload, ring->rx_buf, (read + 8 + sizeof(hdr)) % len, n, len);
-			print_hex_dump(KERN_INFO, "md ee: ", DUMP_PREFIX_OFFSET, 16, 1, payload, n, true);
-		}
+		mt6739_ccci_ring_copy(md->rx_pkt, ring->rx_buf, (read + 8) % len, pkt[1], len);
 		WRITE_ONCE(ring->rx->read, (read + total) % len);
+
+		switch (hdr->channel) {
+		case CCCI_CONTROL_RX:
+			mt6739_ccci_ctrl(md, hdr);
+			break;
+		case CCCI_RPC_RX:
+			mt6739_ccci_rpc(md, q, md->rx_pkt, pkt[1]);
+			break;
+		default:
+			dev_info(md->dev, "queue %d: channel %u data %#x %#x reserved %#x len %u\n",
+				 q, hdr->channel, hdr->data[0], hdr->data[1], hdr->reserved, pkt[1]);
+			print_hex_dump(KERN_INFO, "md pkt: ", DUMP_PREFIX_OFFSET, 16, 1,
+				       md->rx_pkt + sizeof(*hdr),
+				       min_t(u32, pkt[1] - sizeof(*hdr), md->in_exception ? 512 : 128),
+				       true);
+			break;
+		}
 	}
 }
 
@@ -894,6 +1088,11 @@ static int mt6739_ccci_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	md->dev = dev;
 	mutex_init(&md->lock);
+	spin_lock_init(&md->tx_lock);
+	md->rx_pkt = devm_kmalloc(dev, RX_PKT_MAX, GFP_KERNEL);
+	md->tx_pkt = devm_kmalloc(dev, RPC_MAX_BUF + 32, GFP_KERNEL);
+	if (!md->rx_pkt || !md->tx_pkt)
+		return -ENOMEM;
 
 	ret = mt6739_ccci_parse_lk_info(md);
 	if (ret)
