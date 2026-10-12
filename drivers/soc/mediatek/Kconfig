@@ -55,6 +55,14 @@ config MTK_MT6739_CONSYS
 	  Power control and WMT firmware bring-up for the MT6739
 	  connectivity subsystem (Wi-Fi, Bluetooth, GPS and FM).
 
+config MTK_MT6739_CCCI
+	tristate "MediaTek MT6739 modem (CCCI)"
+	depends on ARCH_MEDIATEK || COMPILE_TEST
+	depends on MFD_SYSCON
+	help
+	  Power-on and CCCI handshake for the MT6739 integrated modem
+	  (MD1). The bootloader must load the modem image.
+
 config MTK_PMIC_WRAP
 	tristate "MediaTek PMIC Wrapper Support"
 	depends on RESET_CONTROLLER
