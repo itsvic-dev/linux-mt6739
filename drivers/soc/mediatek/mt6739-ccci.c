@@ -11,10 +11,12 @@
 #include <linux/iopoll.h>
 #include <linux/if_arp.h>
 #include <linux/miscdevice.h>
+#include <linux/mm.h>
 #include <linux/netdevice.h>
 #include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/platform_device.h>
 #include <linux/poll.h>
 #include <linux/random.h>
@@ -230,6 +232,7 @@ enum {
 #define MD_PLL_DONE		0x62930000
 
 #define LK_TAG_NAME_LEN		64
+#define LK_RETRIEVE_MAX		8
 
 struct ccci_lk_info {
 	u64 base;
@@ -247,6 +250,11 @@ struct ccci_lk_tag {
 	u32 data_size;
 	u32 next_offset;
 } __packed;
+
+struct ccci_retrieve {
+	u64 base;
+	u64 size;
+};
 
 struct ccci_smem_layout {
 	u64 base;
@@ -441,16 +449,71 @@ struct mt6739_ccci {
 	struct dentry *debugfs;
 };
 
+static bool mt6739_ccci_retrieved;
+
+static bool mt6739_ccci_in_mapped_rmem(phys_addr_t start, phys_addr_t end)
+{
+	struct device_node *parent, *np;
+	bool found = false;
+
+	parent = of_find_node_by_path("/reserved-memory");
+	if (!parent)
+		return false;
+	for_each_child_of_node(parent, np) {
+		struct reserved_mem *rmem = of_reserved_mem_lookup(np);
+
+		if (rmem && start >= rmem->base && end <= rmem->base + rmem->size &&
+		    !of_property_read_bool(np, "no-map") &&
+		    !of_property_read_bool(np, "reusable")) {
+			found = true;
+			of_node_put(np);
+			break;
+		}
+	}
+	of_node_put(parent);
+	return found;
+}
+
+static void mt6739_ccci_free_retrieve(struct device *dev, const struct ccci_retrieve *r, int num)
+{
+	unsigned long freed = 0;
+	phys_addr_t start, end, pa;
+	int i;
+
+	/* A deferred probe parses the tags again. */
+	if (mt6739_ccci_retrieved)
+		return;
+	mt6739_ccci_retrieved = true;
+
+	for (i = 0; i < num; i++) {
+		start = r[i].base;
+		end = r[i].base + r[i].size;
+		if (!r[i].size || !PAGE_ALIGNED(start) || !PAGE_ALIGNED(end) ||
+		    !mt6739_ccci_in_mapped_rmem(start, end)) {
+			dev_warn(dev, "skipping retrieve range %pa-%pa\n", &start, &end);
+			continue;
+		}
+		for (pa = start; pa < end; pa += PAGE_SIZE)
+			free_reserved_page(phys_to_page(pa));
+		freed += r[i].size;
+		dev_dbg(dev, "freed modem memory %pa-%pa\n", &start, &end);
+	}
+	dev_info(dev, "freed %lu KiB of unused modem memory\n", freed / SZ_1K);
+}
+
 static int mt6739_ccci_parse_lk_info(struct mt6739_ccci *md)
 {
 	struct device *dev = md->dev;
 	struct ccci_lk_info info;
 	struct ccci_lk_tag tag;
+	struct ccci_retrieve retrieve[LK_RETRIEVE_MAX] = {};
 	struct device_node *chosen;
 	bool have_layout = false;
+	int retrieve_num = 0;
+	u32 free_in_kernel = 0;
 	void *area;
 	u32 off = 0;
-	int i, ret;
+	int i, n, ret;
 
 	chosen = of_find_node_by_path("/chosen");
 	if (!chosen)
@@ -489,9 +552,19 @@ static int mt6739_ccci_parse_lk_info(struct mt6739_ccci *md)
 			md->cache_offset = get_unaligned_le32(data);
 		} else if (!strcmp(tag.name, "opt_c2k_lte_mode") && tag.data_size >= 4) {
 			md->c2k_lte_mode = get_unaligned_le32(data);
+		} else if (!strcmp(tag.name, "free_in_kernel") && tag.data_size >= 4) {
+			free_in_kernel = get_unaligned_le32(data);
+		} else if (sscanf(tag.name, "retrieve%d", &n) == 1 && n >= 0 &&
+			   n < LK_RETRIEVE_MAX && tag.data_size >= sizeof(retrieve[0])) {
+			retrieve[n].base = get_unaligned_le64(data);
+			retrieve[n].size = get_unaligned_le64(data + 8);
+			retrieve_num = max(retrieve_num, n + 1);
 		}
 	}
 	memunmap(area);
+
+	if (free_in_kernel == 1)
+		mt6739_ccci_free_retrieve(dev, retrieve, retrieve_num);
 
 	if (!have_layout || !md->ccb_addr || !md->cache_offset)
 		return dev_err_probe(dev, -ENODEV, "LK tags incomplete\n");
