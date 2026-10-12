@@ -166,4 +166,8 @@
 #define CLK_INFRA_NFI_1X		79
 #define CLK_INFRA_NR_CLK		80
 
+/* TOPCKGEN_AO */
+#define CLK_TOP_AO_MCU_SEL		0
+#define CLK_TOP_AO_NR_CLK		1
+
 #endif /* _DT_BINDINGS_CLK_MEDIATEK_MT6739_H */
