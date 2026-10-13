@@ -33,8 +33,9 @@
 #define OVL_L3_PITCH		0x0a4
 #define OVL_L3_ADDR		0xfa0
 #define OVL_CON_CLRFMT		GENMASK(15, 12)
-#define OVL_CON_CLRFMT_XRGB8888	2
+#define OVL_CON_CLRFMT_ARGB8888	2
 #define OVL_CON_AEN		BIT(8)
+#define OVL_CON_BYTE_SWAP	BIT(24)
 
 #define MUTEX0_EN		0x020
 
@@ -80,6 +81,16 @@ static void mt6739_dbi_wait_idle(struct mt6739_dbi *dbi)
 		drm_err_once(&dbi->drm, "DBI stays busy\n");
 }
 
+static u32 mt6739_dbi_ovl_con(u32 format)
+{
+	u32 con = FIELD_PREP(OVL_CON_CLRFMT, OVL_CON_CLRFMT_ARGB8888);
+
+	if (format == DRM_FORMAT_XBGR8888 || format == DRM_FORMAT_ABGR8888)
+		con |= OVL_CON_BYTE_SWAP;
+
+	return con;
+}
+
 static void mt6739_dbi_flush(struct mt6739_dbi *dbi, struct drm_framebuffer *fb)
 {
 	struct drm_gem_dma_object *gem = drm_fb_dma_get_gem_obj(fb, 0);
@@ -88,8 +99,8 @@ static void mt6739_dbi_flush(struct mt6739_dbi *dbi, struct drm_framebuffer *fb)
 	mt6739_dbi_wait_idle(dbi);
 
 	con = readl(dbi->ovl + OVL_L3_CON);
-	con &= ~(OVL_CON_CLRFMT | OVL_CON_AEN);
-	con |= FIELD_PREP(OVL_CON_CLRFMT, OVL_CON_CLRFMT_XRGB8888);
+	con &= ~(OVL_CON_CLRFMT | OVL_CON_AEN | OVL_CON_BYTE_SWAP);
+	con |= mt6739_dbi_ovl_con(fb->format->format);
 	writel(con, dbi->ovl + OVL_L3_CON);
 	writel(OVL_SRC_CON_L3_EN, dbi->ovl + OVL_SRC_CON);
 	writel(fb->pitches[0], dbi->ovl + OVL_L3_PITCH);
@@ -175,6 +186,9 @@ static const struct drm_mode_config_funcs mt6739_dbi_mode_config_funcs = {
 
 static const u32 mt6739_dbi_formats[] = {
 	DRM_FORMAT_XRGB8888,
+	DRM_FORMAT_ARGB8888,
+	DRM_FORMAT_XBGR8888,
+	DRM_FORMAT_ABGR8888,
 };
 
 DEFINE_DRM_GEM_DMA_FOPS(mt6739_dbi_fops);
