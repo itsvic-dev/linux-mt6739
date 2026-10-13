@@ -88,7 +88,6 @@
 			compatible = "ramoops";
 			reg = <0 0x44410000 0 0x4f000>;
 			record-size = <0x10000>;
-			pmsg-size = <0x20000>;
 		};
 
 		/* Used by earlycon=pstoreram. */
