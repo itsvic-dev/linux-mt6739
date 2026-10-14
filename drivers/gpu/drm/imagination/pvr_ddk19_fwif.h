@@ -70,7 +70,15 @@
 #define DDK19_KCCB_CMD_SYNC 107
 #define DDK19_KCCB_CMD_CLEANUP 109
 #define DDK19_KCCB_CMD_POW 110
+#define DDK19_KCCB_CMD_FREELIST_GROW_UPDATE 117
+#define DDK19_KCCB_CMD_FREELISTS_RECONSTRUCTION_UPDATE 119
 #define DDK19_KCCB_CMD_HEALTH_CHECK 120
+
+#define DDK19_FWCCB_CMD_FREELIST_GROW 103
+#define DDK19_FWCCB_CMD_FREELISTS_RECONSTRUCTION 104
+#define DDK19_FWCCB_CMD_CONTEXT_RESET_NOTIFICATION 105
+
+#define DDK19_MAX_FREELISTS_TO_RECONSTRUCT 4
 
 #define DDK19_POW_OFF_REQ 1
 #define DDK19_POW_FORCED_IDLE_REQ 2
@@ -295,6 +303,17 @@ struct ddk19_fwif_kccb_cmd {
 			u32 fw_addr;
 			u32 sync_fw_addr;
 		} cleanup;
+		struct {
+			u32 freelist_fw_addr;
+			u32 delta_pages;
+			u32 new_pages;
+			u32 ready_pages;
+			u32 oom_ready_limit;
+		} freelist_gs;
+		struct {
+			u32 freelist_count;
+			u32 freelist_ids[DDK19_MAX_FREELISTS_TO_RECONSTRUCT];
+		} freelists_reconstruction;
 		u8 raw[136];
 	} data;
 };
@@ -562,7 +581,24 @@ struct ddk19_fwif_hwrtdata {
 struct ddk19_fwif_fwccb_cmd {
 	u32 cmd_type;
 	u32 padding;
-	u8 data[24];
+	union {
+		struct {
+			u32 freelist_id;
+		} freelist_gs;
+		struct {
+			u32 freelist_count;
+			u32 hwr_counter;
+			u32 freelist_ids[DDK19_MAX_FREELISTS_TO_RECONSTRUCT];
+		} freelists_reconstruction;
+		struct {
+			u32 server_common_context_id;
+			u32 reset_reason;
+			u32 reset_job_ref;
+			u32 page_fault;
+			u64 pc_address;
+		} context_reset;
+		u8 raw[24];
+	} data;
 };
 
 #define DDK19_CHECK(type, member, offset) static_assert(offsetof(type, member) == (offset))
@@ -573,6 +609,11 @@ DDK19_CHECK(struct ddk19_fwif_kccb_cmd, data.mmu_cache.sync_update_val, 20);
 static_assert(sizeof(struct ddk19_fwif_fwccb_cmd) == DDK19_FWCCB_CMD_SIZE);
 DDK19_CHECK(struct ddk19_fwif_kccb_cmd, data.kick.work_est_cmd_header_offset, 40);
 DDK19_CHECK(struct ddk19_fwif_kccb_cmd, data.cleanup.sync_fw_addr, 16);
+DDK19_CHECK(struct ddk19_fwif_kccb_cmd, data.freelist_gs.oom_ready_limit, 24);
+DDK19_CHECK(struct ddk19_fwif_kccb_cmd, data.freelists_reconstruction.freelist_ids, 12);
+DDK19_CHECK(struct ddk19_fwif_fwccb_cmd, data, 8);
+DDK19_CHECK(struct ddk19_fwif_fwccb_cmd, data.freelists_reconstruction.freelist_ids, 16);
+DDK19_CHECK(struct ddk19_fwif_fwccb_cmd, data.context_reset.pc_address, 24);
 
 static_assert(sizeof(struct ddk19_fwif_ccb_cmd_header) == 56);
 DDK19_CHECK(struct ddk19_fwif_ccb_cmd_header, work_est_return_data_index, 24);

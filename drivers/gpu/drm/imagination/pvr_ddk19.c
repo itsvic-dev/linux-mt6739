@@ -5,6 +5,7 @@
 #include "pvr_ddk19.h"
 #include "pvr_ddk19_fwif.h"
 #include "pvr_device.h"
+#include "pvr_free_list.h"
 #include "pvr_fw.h"
 #include "pvr_fw_info.h"
 #include "pvr_fw_mips.h"
@@ -59,6 +60,7 @@ struct pvr_ddk19 {
 	u8 *fwccb;
 	u32 *power_sync;
 	struct mutex sync_lock;
+	struct mutex fwccb_lock;
 	u32 *sync;
 	u32 sync_fw_addr;
 	u16 mmu_sync_val;
@@ -131,6 +133,8 @@ static int pvr_ddk19_power_init(struct pvr_device *pvr_dev)
 	err = drmm_mutex_init(drm_dev, &ddk19->kccb_lock);
 	if (!err)
 		err = drmm_mutex_init(drm_dev, &ddk19->sync_lock);
+	if (!err)
+		err = drmm_mutex_init(drm_dev, &ddk19->fwccb_lock);
 	if (err)
 		return err;
 
@@ -797,6 +801,55 @@ static int pvr_ddk19_cleanup_powered(struct pvr_device *pvr_dev, u32 type,
 	return pvr_ddk19_cleanup_dm(pvr_dev, type, fw_addr, dm);
 }
 
+static int pvr_ddk19_kccb_send_active(struct pvr_device *pvr_dev,
+				      struct ddk19_fwif_kccb_cmd *cmd)
+{
+	struct device *dev = from_pvr_device(pvr_dev)->dev;
+	int err;
+
+	if (pm_runtime_get_if_active(dev) <= 0)
+		return -EAGAIN;
+	err = pvr_ddk19_kccb_send(pvr_dev, cmd);
+	pm_runtime_put_autosuspend(dev);
+
+	return err;
+}
+
+int pvr_ddk19_free_list_grow_update(struct pvr_device *pvr_dev,
+				    const struct rogue_fwif_freelist_gs_data *resp,
+				    u32 oom_ready_limit)
+{
+	struct ddk19_fwif_kccb_cmd cmd = {
+		.cmd_type = DDK19_KCCB_CMD_FREELIST_GROW_UPDATE,
+		.dm = DDK19_DM_3D,
+		.data.freelist_gs = {
+			.freelist_fw_addr = resp->freelist_fw_addr,
+			.delta_pages = resp->delta_pages,
+			.new_pages = resp->new_pages,
+			.ready_pages = resp->ready_pages,
+			.oom_ready_limit = oom_ready_limit,
+		},
+	};
+
+	return pvr_ddk19_kccb_send_active(pvr_dev, &cmd);
+}
+
+int pvr_ddk19_free_lists_reconstruction_update(struct pvr_device *pvr_dev,
+					       const struct rogue_fwif_freelists_reconstruction_data *resp)
+{
+	struct ddk19_fwif_kccb_cmd cmd = {
+		.cmd_type = DDK19_KCCB_CMD_FREELISTS_RECONSTRUCTION_UPDATE,
+		.dm = DDK19_DM_TA,
+	};
+	u32 count = min(resp->freelist_count, DDK19_MAX_FREELISTS_TO_RECONSTRUCT);
+
+	cmd.data.freelists_reconstruction.freelist_count = count;
+	memcpy(cmd.data.freelists_reconstruction.freelist_ids, resp->freelist_ids,
+	       count * sizeof(u32));
+
+	return pvr_ddk19_kccb_send_active(pvr_dev, &cmd);
+}
+
 int pvr_ddk19_sync(struct pvr_device *pvr_dev)
 {
 	int err = pvr_power_get(pvr_dev);
@@ -1021,6 +1074,16 @@ void pvr_ddk19_free_list_init(void *dst, u64 dev_addr, u32 max_pages, u32 curren
 	fl->freelist_id = id;
 	fl->ready_pages = ready_pages;
 	fl->oom_ready_limit = ready_pages;
+}
+
+void pvr_ddk19_free_list_reset(void *fw_data)
+{
+	struct ddk19_fwif_freelist *fl = fw_data;
+
+	fl->current_stack_top = fl->current_pages - 1;
+	fl->allocated_page_count = 0;
+	fl->allocated_mmu_page_count = 0;
+	fl->hwr_counter++;
 }
 
 static void ddk19_render_target_init(void *cpu_ptr, void *priv)
@@ -1350,21 +1413,68 @@ bool pvr_ddk19_is_idle(struct pvr_device *pvr_dev)
 	       pvr_ddk19_kccb_is_idle(pvr_dev);
 }
 
+static void pvr_ddk19_process_fwccb_cmd(struct pvr_device *pvr_dev,
+					struct ddk19_fwif_fwccb_cmd *cmd)
+{
+	struct device *dev = from_pvr_device(pvr_dev)->dev;
+
+	switch (cmd->cmd_type) {
+	case DDK19_FWCCB_CMD_FREELIST_GROW: {
+		struct rogue_fwif_fwccb_cmd_freelist_gs_data req = {
+			.freelist_id = cmd->data.freelist_gs.freelist_id,
+		};
+
+		pvr_free_list_process_grow_req(pvr_dev, &req);
+		break;
+	}
+	case DDK19_FWCCB_CMD_FREELISTS_RECONSTRUCTION: {
+		struct rogue_fwif_fwccb_cmd_freelists_reconstruction_data req = {
+			.freelist_count = min(cmd->data.freelists_reconstruction.freelist_count,
+					      DDK19_MAX_FREELISTS_TO_RECONSTRUCT),
+			.hwr_counter = cmd->data.freelists_reconstruction.hwr_counter,
+		};
+
+		memcpy(req.freelist_ids, cmd->data.freelists_reconstruction.freelist_ids,
+		       req.freelist_count * sizeof(u32));
+		dev_warn(dev, "ddk19: HWR %u: reconstructing %u free lists\n",
+			 req.hwr_counter, req.freelist_count);
+		pvr_free_list_process_reconstruct_req(pvr_dev, &req);
+		break;
+	}
+	case DDK19_FWCCB_CMD_CONTEXT_RESET_NOTIFICATION:
+		dev_warn(dev, "ddk19: context %u reset, reason %u, job %u%s, PC 0x%llx\n",
+			 cmd->data.context_reset.server_common_context_id,
+			 cmd->data.context_reset.reset_reason,
+			 cmd->data.context_reset.reset_job_ref,
+			 cmd->data.context_reset.page_fault ? ", page fault" : "",
+			 cmd->data.context_reset.pc_address);
+		break;
+	default:
+		dev_info_ratelimited(dev, "ddk19: FWCCB command %u %*ph\n", cmd->cmd_type,
+				     (int)sizeof(cmd->data), &cmd->data);
+		break;
+	}
+}
+
 void pvr_ddk19_process_irq(struct pvr_device *pvr_dev)
 {
 	struct pvr_ddk19 *ddk19 = pvr_dev->ddk19;
 	struct ddk19_fwif_ccb_ctl *ctl = ddk19->fwccb_ctl;
-	u32 read_offset = READ_ONCE(ctl->read_offset);
 
-	while (read_offset != READ_ONCE(ctl->write_offset)) {
-		struct ddk19_fwif_fwccb_cmd *cmd =
-			(void *)ddk19->fwccb + read_offset * DDK19_FWCCB_CMD_SIZE;
+	u32 read_offset;
 
-		dev_info_ratelimited(from_pvr_device(pvr_dev)->dev, "ddk19: FWCCB command %u %*ph\n",
-				     READ_ONCE(cmd->cmd_type), (int)sizeof(cmd->data), cmd->data);
-		read_offset = (read_offset + 1) & ctl->wrap_mask;
-		WRITE_ONCE(ctl->read_offset, read_offset);
+	mutex_lock(&ddk19->fwccb_lock);
+	while ((read_offset = READ_ONCE(ctl->read_offset)) != READ_ONCE(ctl->write_offset)) {
+		struct ddk19_fwif_fwccb_cmd cmd;
+
+		memcpy(&cmd, ddk19->fwccb + read_offset * DDK19_FWCCB_CMD_SIZE, sizeof(cmd));
+		WRITE_ONCE(ctl->read_offset, (read_offset + 1) & ctl->wrap_mask);
+
+		mutex_unlock(&ddk19->fwccb_lock);
+		pvr_ddk19_process_fwccb_cmd(pvr_dev, &cmd);
+		mutex_lock(&ddk19->fwccb_lock);
 	}
+	mutex_unlock(&ddk19->fwccb_lock);
 
 	if (pvr_ddk19_is_idle(pvr_dev))
 		pm_request_autosuspend(from_pvr_device(pvr_dev)->dev);

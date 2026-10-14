@@ -18,6 +18,8 @@ struct pvr_hwrt_dataset;
 struct pvr_job;
 struct pvr_vm_context;
 struct pvr_power_sequence_ops;
+struct rogue_fwif_freelist_gs_data;
+struct rogue_fwif_freelists_reconstruction_data;
 
 extern const struct pvr_power_sequence_ops pvr_power_sequence_ops_ddk19;
 extern const struct drm_pvr_heap pvr_ddk19_heaps[DRM_PVR_HEAP_COUNT];
@@ -49,6 +51,12 @@ void pvr_ddk19_init_common_context(void *dst, u32 ccbctl_fw_addr, u32 ccb_fw_add
 				   u32 rf_cmd_fw_addr, u32 priority, u32 ctx_id, u32 dm);
 void pvr_ddk19_free_list_init(void *dst, u64 dev_addr, u32 max_pages, u32 current_pages,
 			      u32 grow_pages, u32 ready_pages, u32 id);
+void pvr_ddk19_free_list_reset(void *fw_data);
+int pvr_ddk19_free_list_grow_update(struct pvr_device *pvr_dev,
+				    const struct rogue_fwif_freelist_gs_data *resp,
+				    u32 oom_ready_limit);
+int pvr_ddk19_free_lists_reconstruction_update(struct pvr_device *pvr_dev,
+					       const struct rogue_fwif_freelists_reconstruction_data *resp);
 int pvr_ddk19_hwrt_common_init(struct pvr_hwrt_dataset *hwrt, u64 vheap_table_dev_addr);
 int pvr_ddk19_hwrt_data_init(struct pvr_hwrt_data *hwrt_data);
 u32 pvr_ddk19_job_cmd_len(struct pvr_job *job);

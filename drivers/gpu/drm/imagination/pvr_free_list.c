@@ -395,6 +395,15 @@ void pvr_free_list_process_grow_req(struct pvr_device *pvr_dev,
 	resp->delta_pages = grow_pages;
 	resp->new_pages = free_list->current_pages + free_list->ready_pages;
 	resp->ready_pages = free_list->ready_pages;
+
+	if (pvr_dev->device_data->ddk19) {
+		u32 oom_ready_limit = calculate_free_list_ready_pages(free_list, resp->ready_pages);
+
+		pvr_free_list_put(free_list);
+		WARN_ON(pvr_ddk19_free_list_grow_update(pvr_dev, resp, oom_ready_limit));
+		return;
+	}
+
 	pvr_free_list_put(free_list);
 
 	WARN_ON(pvr_kccb_send_cmd(pvr_dev, &resp_cmd, NULL));
@@ -591,6 +600,11 @@ pvr_free_list_reconstruct(struct pvr_device *pvr_dev, u32 freelist_id)
 	 */
 	free_list->current_pages -= free_list->ready_pages;
 
+	if (pvr_dev->device_data->ddk19) {
+		pvr_ddk19_free_list_reset(free_list->fw_data);
+		goto out_unlock;
+	}
+
 	fw_data = free_list->fw_data;
 	fw_data->current_stack_top = fw_data->current_pages - 1;
 	fw_data->allocated_page_count = 0;
@@ -608,6 +622,7 @@ pvr_free_list_reconstruct(struct pvr_device *pvr_dev, u32 freelist_id)
 		pvr_fw_object_vunmap(hwrt_data->fw_obj);
 	}
 
+out_unlock:
 	mutex_unlock(&free_list->lock);
 
 	pvr_free_list_put(free_list);
@@ -637,6 +652,11 @@ pvr_free_list_process_reconstruct_req(struct pvr_device *pvr_dev,
 	resp->freelist_count = count;
 	memcpy(resp->freelist_ids, req->freelist_ids,
 	       count * sizeof(resp->freelist_ids[0]));
+
+	if (pvr_dev->device_data->ddk19) {
+		WARN_ON(pvr_ddk19_free_lists_reconstruction_update(pvr_dev, resp));
+		return;
+	}
 
 	WARN_ON(pvr_kccb_send_cmd(pvr_dev, &resp_cmd, NULL));
 }
