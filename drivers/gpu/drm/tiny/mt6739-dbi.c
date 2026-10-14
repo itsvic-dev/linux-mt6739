@@ -243,6 +243,8 @@ static int mt6739_dbi_probe(struct platform_device *pdev)
 	dbi->mode = (struct drm_display_mode) {
 		DRM_SIMPLE_MODE(width, height, width_mm, height_mm),
 	};
+	/* Userspace paces frames by the mode's refresh rate; report 60 Hz. */
+	dbi->mode.clock = DIV_ROUND_UP(60 * width * height, 1000);
 
 	ret = drmm_mode_config_init(drm);
 	if (ret)
