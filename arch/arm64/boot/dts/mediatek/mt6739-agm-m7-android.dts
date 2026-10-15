@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+
+#include "mt6739-agm-m7.dts"
+
+/ {
+	firmware {
+		android {
+			compatible = "android,firmware";
+			boot_devices = "soc/11240000.mmc";
+		};
+	};
+};

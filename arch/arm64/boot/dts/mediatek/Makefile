@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt2712-evb.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt6739-agm-m7.dtb
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt6739-agm-m7-android.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt6755-evb.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt6779-evb.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt6795-evb.dtb
@@ -190,3 +191,4 @@ DTC_FLAGS_mt7988a-bananapi-bpi-r4-pro-4e := -@
 DTC_FLAGS_mt7988a-bananapi-bpi-r4-pro-8x := -@
 DTC_FLAGS_mt8395-radxa-nio-12l := -@
 DTC_FLAGS_mt6739-agm-m7 := -@
+DTC_FLAGS_mt6739-agm-m7-android := -@
